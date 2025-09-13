@@ -6,7 +6,6 @@ export default function Home() {
   return (
     <div className="min-h-screen flex flex-col">
 
-
       <main className="flex-1">
         <section className="bg-gradient-to-b from-brand/10 to-transparent">
           <div className="max-w-6xl mx-auto px-4 py-16 grid md:grid-cols-2 gap-10 items-center">
@@ -37,11 +36,6 @@ export default function Home() {
         </section>
       </main>
 
-      {/* <footer className="border-t">
-        <div className="max-w-6xl mx-auto px-4 py-6 text-center text-sm text-gray-500">
-          © {new Date().getFullYear()} Passerby
-        </div>
-      </footer> */}
       <Footer />
     </div>
   )

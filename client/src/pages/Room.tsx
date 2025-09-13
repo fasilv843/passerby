@@ -138,6 +138,26 @@ export default function Room({
     setRemoteStream(null);
   };
 
+  const handleExit = () => {
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+    }
+
+    if (remoteStream) {
+        remoteStream.getTracks().forEach(track => track.stop());
+        setRemoteStream(null);
+    }
+
+    if (peerService.peer) {
+        peerService.peer.close();
+        // peerService.peer = null; // if you keep it in a singleton/service
+    }
+
+    // socket.emit("leave-room", { roomId });
+
+    onExit()
+  };
+
   return (
     <>
       <main className="flex-1">
@@ -175,7 +195,7 @@ export default function Room({
           <button className="btn btn-primary" onClick={handlePass}>
             Pass
           </button>
-          <button className="btn btn-primary" onClick={onExit}>
+          <button className="btn btn-primary" onClick={handleExit}>
             Exit
           </button>
         </div>

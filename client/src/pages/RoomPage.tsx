@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import Lobby from "./Lobby";
 import Room from "./Room";
+import { useNavigate } from "react-router-dom";
 
 export default function RoomPage() {
   const [joined, setJoined] = useState(false);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
-
+    const navigate = useNavigate()
 
   useEffect(() => {
     const getPermissions = async () => {
@@ -39,6 +40,7 @@ export default function RoomPage() {
     setJoined(false);
     localStream?.getTracks().forEach((t) => t.stop());
     setLocalStream(null);
+    navigate('/');
   };
 
   return joined ? (
