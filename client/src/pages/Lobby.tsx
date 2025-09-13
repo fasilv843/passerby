@@ -1,7 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import Loading from "../components/Loading";
-
 interface LobbyProps {
   onJoin: () => void;
   localStream: MediaStream | null;

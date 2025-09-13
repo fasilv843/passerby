@@ -24,9 +24,6 @@ export default function Room({
   }, [localStream]);
 
   useEffect(() => {
-    console.log('remote stream updated', remoteStream);
-    console.log('current remoteVideoRef', remoteVideoRef.current);
-    
     if (remoteStream && remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = remoteStream;
       remoteVideoRef.current.play();
@@ -72,7 +69,6 @@ export default function Room({
             }
         }
 
-
         peerService.peer.onnegotiationneeded = async () => {
             console.log("on negotiation needed, generating offer", 'in send-offer');
             const offer = await peerService.getOffer();
@@ -82,7 +78,6 @@ export default function Room({
                 roomId
             })
         }
-
         
     })
 
@@ -101,8 +96,6 @@ export default function Room({
         console.log("sending answer", answer);
         socket.emit('answer', { roomId, answer })
 
-        // peerService.peer.ontrack = handleOnTrack;
-
         peerService.peer.onicecandidate = async (e) => {
             if (!e.candidate) {
                 return;
@@ -119,7 +112,6 @@ export default function Room({
 
         peerService.peer.onnegotiationneeded = async () => {
             console.log("on negotiation needed, generating offer", 'in offer');
-            // localStreamRef.current.getTracks().forEach(track => peerService.peer.addTrack(track, localStreamRef.current));
             const offer = await peerService.getOffer();
             console.log("offer", offer);
             socket.emit("offer", {
@@ -131,7 +123,6 @@ export default function Room({
     })
 
     socket.on("answer", ({roomId, answer}: { roomId: string, answer: RTCSessionDescriptionInit }) => {
-        // setLobby(false);
         console.log('received answer', answer);
         peerService.setLocalDescription(answer)
         console.log("loop closed");

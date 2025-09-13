@@ -17,11 +17,6 @@ export default function RoomPage() {
         });
 
         setLocalStream(stream);
-
-        // if (localVideoRef.current) {
-        //   localVideoRef.current.srcObject = stream;
-        //   localVideoRef.current.play();
-        // }
       } catch (err: any) {
         if (err.name === "NotAllowedError") {
           setPermissionError("Camera and microphone permission required");
@@ -43,16 +38,12 @@ export default function RoomPage() {
   const handleExit = () => {
     setJoined(false);
     localStream?.getTracks().forEach((t) => t.stop());
-    // remoteStream?.getTracks().forEach((t) => t.stop());
     setLocalStream(null);
-    // setRemoteStream(null);
   };
 
   return joined ? (
     <Room
       localStream={localStream}
-    //   remoteStream={remoteStream}
-    //   onPass={() => setRemoteStream(null)}
       onExit={handleExit}
     />
   ) : (
