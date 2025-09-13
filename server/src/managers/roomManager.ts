@@ -16,7 +16,7 @@ export class RoomManager {
     createRoom(user1: User, user2: User) {
         const roomId = this.generate().toString();
 
-        console.log({user1: user1, user2: user2, roomId});
+        console.log({ roomId });
         
         this.rooms.set(roomId, {
             user1, 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Loading from "../components/Loading";
-import { io } from "socket.io-client";
 import peerService from "../services/peerService";
+import socketService from "../services/socketService";
 
 interface RoomProps {
   localStream: MediaStream | null;
@@ -15,6 +15,16 @@ export default function Room({
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [roomId, setRoomId] = useState<string | null>(null)
+
+  useEffect(() => {
+    socketService.connect();
+
+    return () => {
+        socketService.disconnect();
+    }
+  }, [])
+
 
   useEffect(() => {
     if (localStream && localVideoRef.current) {
@@ -30,112 +40,101 @@ export default function Room({
     }
   }, [remoteStream]);
 
-  const setTracks = useCallback(() => {
-    console.log(localStream, 'localStream');
-    if (localStream) {
-        localStream.getTracks().forEach(track => {
-            console.warn(track, track.kind);
-            peerService.peer.addTrack(track, localStream);
-        });
-    }
-  }, [localStream])
-
   const handleOnTrack = useCallback((event: RTCTrackEvent) => {
-    console.error("Remote track received:", event);
-
+    console.warn("Remote track received:", event);
     const stream = event.streams[0];
     setRemoteStream(stream);
   }, [])
 
-  peerService.peer.ontrack = handleOnTrack;
+  const handleOnIceCandidate = useCallback((e: RTCPeerConnectionIceEvent) => {
+    console.log("receiving ice candidate locally");
+    
+    const socket = socketService.getSocket()
+    
+    if (e.candidate) {
+       socket.emit("add-ice-candidate", {
+        candidate: e.candidate,
+        type: "sender",
+        roomId
+       })
+    }
+  }, [roomId])
+
+  const handleOnNegoNeeded = useCallback(async () => {
+    console.log("on negotiation needed, generating offer", 'in handleOnNegoNeeded');
+    
+    const offer = await peerService.getOffer();
+    const socket = socketService.getSocket();
+    console.log("offer", offer);
+    socket.emit("offer", {
+        offer,
+        roomId
+    })
+  }, [roomId])
 
   useEffect(() => {
-    const socket = io("http://localhost:3000");
+    peerService.create(
+        handleOnTrack,
+        handleOnIceCandidate,
+        handleOnNegoNeeded
+    );
+    return () => {
+      peerService.close();
+    }
+  }, [handleOnTrack, handleOnIceCandidate, handleOnNegoNeeded])
+
+  const setTracks = useCallback(() => {
+    if (localStream) {
+        peerService.addTracks(localStream);
+    }
+  }, [localStream])
+
+
+
+  useEffect(() => {
+    const socket = socketService.getSocket()
+
     socket.on("send-offer", ({ roomId }: { roomId: string }) => {
         console.log('send-offer received - roomId', roomId);
-
+        setRoomId(roomId);
         setTracks()
-
-        peerService.peer.onicecandidate = async (e) => {
-            console.log("receiving ice candidate locally");
-            // console.log(e.candidate, 'e.candidate');
-            
-            if (e.candidate) {
-               socket.emit("add-ice-candidate", {
-                candidate: e.candidate,
-                type: "sender",
-                roomId
-               })
-            }
-        }
-
-        peerService.peer.onnegotiationneeded = async () => {
-            console.log("on negotiation needed, generating offer", 'in send-offer');
-            const offer = await peerService.getOffer();
-            console.log("offer", offer);
-            socket.emit("offer", {
-                offer,
-                roomId
-            })
-        }
-        
     })
 
-    socket.on("add-ice-candidate", ({candidate, type}) => {
+    socket.on("add-ice-candidate", ({ candidate }) => {
         console.log("add ice candidate from remote");
-        // console.log({candidate, type})
-        peerService.peer.addIceCandidate(candidate);
+        peerService.addIceCandidate(candidate);
     })
 
     socket.on("offer", async ({roomId, offer}: { roomId: string, offer: RTCSessionDescriptionInit }) => {
-        console.log("received offer", offer);
+        console.log("offer received ");
+        setRoomId(roomId)
 
         setTracks()
 
         const answer = await peerService.getAnswer(offer)
-        console.log("sending answer", answer);
+        console.log("sending answer");
         socket.emit('answer', { roomId, answer })
-
-        peerService.peer.onicecandidate = async (e) => {
-            if (!e.candidate) {
-                return;
-            }
-            // console.log("omn ice candidate on receiving side ...", e.candidate);
-            if (e.candidate) {
-               socket.emit("add-ice-candidate", {
-                candidate: e.candidate,
-                type: "receiver",
-                roomId
-               })
-            }
-        }
-
-        peerService.peer.onnegotiationneeded = async () => {
-            console.log("on negotiation needed, generating offer", 'in offer');
-            const offer = await peerService.getOffer();
-            console.log("offer", offer);
-            socket.emit("offer", {
-                offer,
-                roomId
-            })
-        }
 
     })
 
     socket.on("answer", ({roomId, answer}: { roomId: string, answer: RTCSessionDescriptionInit }) => {
-        console.log('received answer', answer);
+        console.log('answer received');
         peerService.setLocalDescription(answer)
         console.log("loop closed");
     })
 
     return () => {
-        socket.disconnect()
+        // socket.disconnect()
     }
   }, [])
 
   const handlePass = () => {
-    // onPass();
     setRemoteStream(null);
+    peerService.reset(
+        handleOnTrack,
+        handleOnIceCandidate,
+        handleOnNegoNeeded
+    );
   };
 
   const handleExit = () => {
@@ -148,10 +147,7 @@ export default function Room({
         setRemoteStream(null);
     }
 
-    if (peerService.peer) {
-        peerService.peer.close();
-        // peerService.peer = null; // if you keep it in a singleton/service
-    }
+    peerService.close()
 
     // socket.emit("leave-room", { roomId });
 

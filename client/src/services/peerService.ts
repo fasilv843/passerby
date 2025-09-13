@@ -1,7 +1,23 @@
 class PeerService {
-    peer: RTCPeerConnection;
+    private static instance: PeerService;
+    peer: RTCPeerConnection | null = null;
 
-    constructor() {
+    static getInstance(): PeerService {
+        if (!PeerService.instance) {
+          PeerService.instance = new PeerService();
+        }
+        return PeerService.instance;
+    }
+
+    create(
+        onTrack: (event: RTCTrackEvent) => void,
+        onIceCandidate: (candidate: RTCPeerConnectionIceEvent) => void,
+        onNegotiationNeeded: () => void
+    ) {
+        if (this.peer) {
+            this.peer.close();
+        }
+
         this.peer = new RTCPeerConnection({
             iceServers: [
                 {
@@ -12,13 +28,61 @@ class PeerService {
                 },
             ],
         });
+
+        // 🚀 Add transceivers immediately after creating the peer
+        this.peer.addTransceiver("audio", { direction: "sendrecv" });
+        this.peer.addTransceiver("video", { direction: "sendrecv" });
+
+        // attach event listeners
+        this.peer.ontrack = onTrack;
+        this.peer.onicecandidate = onIceCandidate;
+        this.peer.onnegotiationneeded = onNegotiationNeeded;
+
+        return this.peer;
     }
+
+    reset(
+        onTrack: (event: RTCTrackEvent) => void,
+        onIceCandidate: (candidate: RTCPeerConnectionIceEvent) => void,
+        onNegotiationNeeded: () => void
+    ) {
+        this.close();
+        this.create(onTrack, onIceCandidate, onNegotiationNeeded);
+    }
+
+    close() {
+        if (this.peer) {
+            this.peer.close();
+            this.peer = null;
+        }
+    }
+
+    addIceCandidate(candidate: RTCIceCandidateInit) {
+        if (this.peer) {
+            this.peer.addIceCandidate(new RTCIceCandidate(candidate));
+        } else {
+            console.warn('peer is not available', 'in addIceCandidate');
+        }
+    }
+
+    addTracks(stream: MediaStream) {
+        if (this.peer) {
+            stream.getTracks().forEach((track) => {
+                this.peer?.addTrack(track, stream);
+            });
+        } else {
+            console.warn('peer is not available', 'in addTracks');
+        }
+    }
+
 
     async getOffer(): Promise<RTCSessionDescriptionInit | undefined> {
         if (this.peer) {
             const offer = await this.peer.createOffer();
             await this.peer.setLocalDescription(offer);
             return offer;
+        } else {
+            console.warn('peer is not available', 'in getOffer');
         }
     }
 
@@ -40,6 +104,8 @@ class PeerService {
     }
 }
 
-const peerService = new PeerService();
+const peerService = PeerService.getInstance();
+
+// const peerService = new PeerService();
 
 export default peerService;

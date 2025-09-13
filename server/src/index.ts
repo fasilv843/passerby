@@ -1,9 +1,14 @@
 import { Server } from "socket.io";
 import { UserManager } from "./managers/userManager";
+import dotenv from 'dotenv'
 
-const io = new Server(3000, {
+dotenv.config()
+
+const PORT = process.env.PORT || 3000;
+
+const io = new Server(Number(PORT), {
     cors: {
-        origin: "*"
+        origin: process.env.CLIENT_URL
     }
 });
 
@@ -16,11 +21,5 @@ io.on('connection', (socket) => {
         console.log('a user disconnected');
         userManager.removeUser(socket.id);
     });
-    // socket.on('message', (message) => {
-    //     console.log('message: ', message);
-    // });
-    // socket.on('chat message', (message) => {
-    //     io.emit('chat message', message);
-    // });
 });
 

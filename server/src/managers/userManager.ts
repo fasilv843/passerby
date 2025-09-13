@@ -1,10 +1,8 @@
 import { Socket } from "socket.io";
 import { RoomManager } from "./roomManager";
 
-
 export interface User {
     socket: Socket;
-    // name: string;
     id: string;
 }
 
@@ -21,11 +19,9 @@ export class UserManager {
 
     addUser(socket: Socket) {
         this.users.push({
-            // name, socket
             socket, id: socket.id
         })
         this.queue.push(socket.id);
-        // socket.emit("lobby");
         this.clearQueue()
         this.initListeners(socket);
     }
@@ -51,7 +47,7 @@ export class UserManager {
         if (!user1 || !user2) {
             return;
         }
-        console.log("creating roonm");
+        console.log("creating room");
 
         this.roomManager.createRoom(user1, user2);
         this.clearQueue();
@@ -67,8 +63,6 @@ export class UserManager {
         })
 
         socket.on("add-ice-candidate", ({candidate, roomId, type}) => {
-            console.log('add-ice-candidate', { candidate, roomId, type });
-            
             this.roomManager.onIceCandidates(roomId, socket.id, candidate, type);
         });
     }
