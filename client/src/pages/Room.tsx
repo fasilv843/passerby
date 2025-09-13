@@ -117,7 +117,7 @@ export default function Room({
 
     })
 
-    socket.on("answer", ({roomId, answer}: { roomId: string, answer: RTCSessionDescriptionInit }) => {
+    socket.on("answer", ({ answer }: { answer: RTCSessionDescriptionInit }) => {
         console.log('answer received');
         peerService.setLocalDescription(answer)
         console.log("loop closed");
