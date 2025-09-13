@@ -2,19 +2,10 @@ import { Link } from 'react-router-dom'
 import Footer from '../components/Footer'
 
 export default function Home() {
+
   return (
     <div className="min-h-screen flex flex-col">
-      {/* <header className="w-full border-b">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded bg-brand" />
-            <span className="text-xl font-semibold">Passerby</span>
-          </div>
-          <nav className="text-sm text-gray-600 hidden sm:block">
-            <span>Talk to random strangers instantly</span>
-          </nav>
-        </div>
-      </header> */}
+
 
       <main className="flex-1">
         <section className="bg-gradient-to-b from-brand/10 to-transparent">

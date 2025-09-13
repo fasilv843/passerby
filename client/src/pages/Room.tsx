@@ -3,74 +3,59 @@ import Loading from "../components/Loading";
 import { io } from "socket.io-client";
 import peerService from "../services/peerService";
 
-export default function Room() {
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-  const remoteStreamRef = useRef<MediaStream | null>(null);
+interface RoomProps {
+  localStream: MediaStream | null;
+  onExit: () => void;
+}
+
+export default function Room({
+  localStream,
+  onExit,
+}: RoomProps) {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const [isAudioMuted, setIsAudioMuted] = useState(false);
-  const [isVideoMuted, setIsVideoMuted] = useState(false);
-
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
 
   useEffect(() => {
-    const getCam = async () => {
-        const stream = await window.navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: true
-        })
-  
-        setLocalStream(stream);
-        localStreamRef.current = stream;
-  
-        if (!localVideoRef.current) {
-            return;
-        }
-
-        localVideoRef.current.srcObject = stream;
-        localVideoRef.current.play();
+    if (localStream && localVideoRef.current) {
+      localVideoRef.current.srcObject = localStream;
+      localVideoRef.current.play();
     }
-    getCam()
-
-    return () => {
-        localStreamRef.current?.getTracks().forEach((t) => t.stop());
-        remoteStreamRef.current?.getTracks().forEach((t) => t.stop());
-      };
-  }, []);
+  }, [localStream]);
 
   useEffect(() => {
-    console.log('remoteStream changed', remoteStream);
+    console.log('remote stream updated', remoteStream);
     console.log('current remoteVideoRef', remoteVideoRef.current);
     
-    if (remoteVideoRef.current && remoteStream) {
+    if (remoteStream && remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = remoteStream;
-      remoteStreamRef.current = remoteStream;
+      remoteVideoRef.current.play();
     }
   }, [remoteStream]);
 
   const setTracks = useCallback(() => {
-    console.log(localStreamRef.current, 'localStreamRef');
-    if (localStreamRef?.current) {
-        localStreamRef.current.getTracks().forEach(track => {
+    console.log(localStream, 'localStream');
+    if (localStream) {
+        localStream.getTracks().forEach(track => {
             console.warn(track, track.kind);
-            peerService.peer.addTrack(track, localStreamRef.current as MediaStream);
+            peerService.peer.addTrack(track, localStream);
         });
     }
-  }, [localStreamRef])
+  }, [localStream])
+
+  const handleOnTrack = useCallback((event: RTCTrackEvent) => {
+    console.error("Remote track received:", event);
+
+    const stream = event.streams[0];
+    setRemoteStream(stream);
+  }, [])
+
+  peerService.peer.ontrack = handleOnTrack;
 
   useEffect(() => {
     const socket = io("http://localhost:3000");
     socket.on("send-offer", ({ roomId }: { roomId: string }) => {
         console.log('send-offer received - roomId', roomId);
-        
-        // console.log(localStreamRef.current, 'localStreamRef');
-        // if (localStreamRef?.current) {
-        //     localStreamRef.current.getTracks().forEach(track => {
-        //         console.warn(track, track.kind);
-        //         peerService.peer.addTrack(track, localStreamRef.current as MediaStream);
-        //     });
-        // }
 
         setTracks()
 
@@ -98,14 +83,7 @@ export default function Room() {
             })
         }
 
-        peerService.peer.ontrack = (event) => {
-            console.error("Remote track received:", event, 'send-offer');
-
-            const stream = event.streams[0];
-            setRemoteStream(stream);
-            // remoteStreamRef.current = stream;
-
-        };
+        
     })
 
     socket.on("add-ice-candidate", ({candidate, type}) => {
@@ -117,27 +95,13 @@ export default function Room() {
     socket.on("offer", async ({roomId, offer}: { roomId: string, offer: RTCSessionDescriptionInit }) => {
         console.log("received offer", offer);
 
-        // console.log(localStreamRef.current, 'localStreamRef');
-        // if (localStreamRef?.current) {
-        //     localStreamRef.current.getTracks().forEach(track => {
-        //         console.warn(track, track.kind);
-        //         peerService.peer.addTrack(track, localStreamRef.current as MediaStream);
-        //     });
-        // }
-
         setTracks()
 
         const answer = await peerService.getAnswer(offer)
         console.log("sending answer", answer);
         socket.emit('answer', { roomId, answer })
 
-        peerService.peer.ontrack = (event) => {
-            console.error("Remote track received:", event, 'offer');
-
-            const stream = event.streams[0];
-            setRemoteStream(stream);
-            // remoteStreamRef.current = stream;
-        };
+        // peerService.peer.ontrack = handleOnTrack;
 
         peerService.peer.onicecandidate = async (e) => {
             if (!e.candidate) {
@@ -178,80 +142,53 @@ export default function Room() {
     }
   }, [])
 
-
-  const toggleAudio = () => {
-    const enabled = !isAudioMuted;
-    setIsAudioMuted(enabled);
-    localStreamRef.current?.getAudioTracks().forEach((t) => (t.enabled = !enabled));
-  };
-
-  const toggleVideo = () => {
-    const enabled = !isVideoMuted;
-    setIsVideoMuted(enabled);
-    localStreamRef.current?.getVideoTracks().forEach((t) => (t.enabled = !enabled));
-  };
-
   const handlePass = () => {
-    // Placeholder: would signal server to skip
-    // remoteStream?.getTracks().forEach((t) => t.stop());
+    // onPass();
     setRemoteStream(null);
-    remoteStreamRef.current = null;
-    // In a real flow, re-match here
   };
 
   return (
-    // <div className="min-h-screen flex flex-col">
-      <>
-        <main className="flex-1">
-            <div className="max-w-6xl mx-auto px-4 py-6 grid gap-4 md:gap-6 grid-cols-1 md:grid-cols-2">
-            <div className="aspect-video w-full bg-black/5 rounded-lg overflow-hidden border flex items-center justify-center">
-                {localStream ? (
-                <video
-                    ref={localVideoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover"
-                />
-                ) : (
-                <Loading />
-                )}
-            </div>
-            <div className="aspect-video w-full bg-black/5 rounded-lg overflow-hidden border flex items-center justify-center">
-                {remoteStream ? (
-                <video
-                    ref={remoteVideoRef}
-                    autoPlay
-                    playsInline
-                    className="w-full h-full object-cover"
-                />
-                ) : (
-                <Loading />
-                )}
-            </div>
-            </div>
-        </main>
-
-        <div className="sticky bottom-0 border-t bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-            <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-center gap-3">
-            <button className="btn btn-ghost" onClick={toggleAudio}>
-                <span className="icon">{isAudioMuted ? "mic_off" : "mic"}</span>
-                {isAudioMuted ? "Unmute" : "Mute"}
-            </button>
-            <button className="btn btn-ghost" onClick={toggleVideo}>
-                <span className="icon">
-                {isVideoMuted ? "videocam_off" : "videocam"}
-                </span>
-                {isVideoMuted ? "Start Video" : "Stop Video"}
-            </button>
-            <button className="btn btn-primary" onClick={handlePass}>
-                <span className="icon">skip_next</span>
-                Pass
-            </button>
-            </div>
+    <>
+      <main className="flex-1">
+        <div className="max-w-6xl mx-auto px-4 py-6 grid gap-4 md:gap-6 grid-cols-1 md:grid-cols-2">
+          <div className="aspect-video w-full bg-black/5 rounded-lg overflow-hidden border flex items-center justify-center">
+            {localStream ? (
+              <video
+                ref={localVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <Loading />
+            )}
+          </div>
+          <div className="aspect-video w-full bg-black/5 rounded-lg overflow-hidden border flex items-center justify-center">
+            {remoteStream ? (
+              <video
+                ref={remoteVideoRef}
+                autoPlay
+                playsInline
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <Loading />
+            )}
+          </div>
         </div>
-      </>
+      </main>
 
-    // </div>
+      <div className="sticky bottom-0 border-t bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-center gap-3">
+          <button className="btn btn-primary" onClick={handlePass}>
+            Pass
+          </button>
+          <button className="btn btn-primary" onClick={onExit}>
+            Exit
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
