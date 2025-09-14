@@ -5,7 +5,7 @@ let GLOBAL_ROOM_ID = 1;
 export class RoomManager {
     private rooms: Map<string, Room>
     constructor() {
-        this.rooms = new Map<string, Room>()
+        this.rooms = new Map<string, Room>();
     }
 
     createRoom(user1: User, user2: User) {

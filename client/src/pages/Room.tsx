@@ -113,6 +113,17 @@ export default function Room({
         console.log("loop closed");
     }, []);
 
+    const handleOnLobby = useCallback(() => {
+        console.log('moving to lobby');
+
+        if (remoteStream) {
+          remoteStream.getTracks().forEach(track => track.stop());
+          setRemoteStream(null);
+        }
+  
+        peerService.close()
+    }, [remoteStream]);
+
 
   useEffect(() => {
     const socket = socketService.getSocket()
@@ -121,17 +132,26 @@ export default function Room({
     socket.on("add-ice-candidate", handleAddIceCandidate)
     socket.on("offer", handleOnOffer)
     socket.on("answer", handleOnAnswer)
+    socket.on("lobby", handleOnLobby)
 
     return () => {
         socket.off("send-offer", handleSendOffer)
         socket.off("add-ice-candidate", handleAddIceCandidate)
         socket.off("offer", handleOnOffer)
         socket.off("answer", handleOnAnswer)
+        socket.off("lobby", handleOnLobby)
+
     }
-  }, [handleAddIceCandidate, handleOnAnswer, handleOnOffer, handleSendOffer])
+  }, [handleAddIceCandidate, handleOnAnswer, handleOnOffer, handleSendOffer, handleOnLobby])
 
   const handlePass = () => {
     setRemoteStream(null);
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
+    
+    const socket = socketService.getSocket()
+    socket.emit("pass", { roomId });
     peerService.reset(
         handleOnTrack,
         handleOnIceCandidate,
@@ -140,18 +160,31 @@ export default function Room({
   };
 
   const handleExit = () => {
+
     if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
+      localStream.getTracks().forEach(track => track.stop());
     }
 
-    if (remoteStream) {
-        remoteStream.getTracks().forEach(track => track.stop());
-        setRemoteStream(null);
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null;
     }
 
-    peerService.close()
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
 
-    // socket.emit("leave-room", { roomId });
+    if (roomId) {
+      const socket = socketService.getSocket()
+      socket.emit("exit", { roomId });
+  
+      if (remoteStream) {
+          remoteStream.getTracks().forEach(track => track.stop());
+          setRemoteStream(null);
+      }
+  
+      peerService.close()
+    }
+
 
     onExit()
   };
@@ -190,7 +223,7 @@ export default function Room({
 
       <div className="sticky bottom-0 border-t bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-center gap-3">
-          <button className="btn btn-primary" onClick={handlePass}>
+          <button disabled={!roomId} className="btn btn-primary" onClick={handlePass}>
             Pass
           </button>
           <button className="btn btn-primary" onClick={handleExit}>

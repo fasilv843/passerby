@@ -52,6 +52,12 @@ class PeerService {
 
     close() {
         if (this.peer) {
+            console.error('closing peer', 'in close', 'removing tracks');
+            
+            this.peer.getSenders().forEach(sender => {
+                console.log('removing track', sender.track);
+                this.peer!.removeTrack(sender);
+            });
             this.peer.close();
             this.peer = null;
         }

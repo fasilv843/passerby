@@ -19,6 +19,7 @@ export default function RoomPage() {
 
         setLocalStream(stream);
       } catch (err: any) {
+        console.warn(err, 'permission error');
         if (err.name === "NotAllowedError") {
           setPermissionError("Camera and microphone permission required");
         } else if (err.name === "NotFoundError") {
@@ -29,6 +30,12 @@ export default function RoomPage() {
       }
     };
     getPermissions();
+
+    return () => {
+      console.log('cleaning up, local stream from RoomPage');
+      
+      localStream?.getTracks().forEach((t) => t.stop());
+    };
   }, []);
 
   const handleJoin = () => {
