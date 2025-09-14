@@ -46,17 +46,14 @@ export default function Room({
     setRemoteStream(stream);
   }, [])
 
-  const handleOnIceCandidate = useCallback((e: RTCPeerConnectionIceEvent) => {
+  const handleOnIceCandidate = useCallback((iceEvent: RTCPeerConnectionIceEvent) => {
     console.log("receiving ice candidate locally");
     
     const socket = socketService.getSocket()
+    const { candidate } = iceEvent;
     
-    if (e.candidate) {
-       socket.emit("add-ice-candidate", {
-        candidate: e.candidate,
-        type: "sender",
-        roomId
-       })
+    if (candidate) {
+      socket.emit("add-ice-candidate", { candidate, roomId })
     }
   }, [roomId])
 
@@ -66,10 +63,7 @@ export default function Room({
     const offer = await peerService.getOffer();
     const socket = socketService.getSocket();
     console.log("offer", offer);
-    socket.emit("offer", {
-        offer,
-        roomId
-    })
+    socket.emit("offer", { offer, roomId })
   }, [roomId])
 
   useEffect(() => {
@@ -90,43 +84,51 @@ export default function Room({
   }, [localStream])
 
 
+    const handleSendOffer = useCallback(({ roomId }: { roomId: string }) => {
+        console.log('send-offer received - roomId', roomId);
+        setRoomId(roomId);
+        setTracks()
+    }, [setTracks])
+
+    const handleAddIceCandidate = useCallback(({ candidate }: { candidate: RTCIceCandidateInit }) => {
+        console.log("add ice candidate from remote");
+        peerService.addIceCandidate(candidate);
+    }, []);
+
+    const handleOnOffer = useCallback(async ({roomId, offer}: { roomId: string, offer: RTCSessionDescriptionInit }) => {
+        console.log("offer received ");
+        setRoomId(roomId)
+        setTracks()
+
+        const answer = await peerService.getAnswer(offer)
+        const socket = socketService.getSocket();
+        console.log("sending answer");
+        socket.emit('answer', { roomId, answer })
+    }, [setTracks]);
+
+
+    const handleOnAnswer = useCallback(({ answer }: { answer: RTCSessionDescriptionInit }) => {
+        console.log('answer received');
+        peerService.setLocalDescription(answer)
+        console.log("loop closed");
+    }, []);
+
 
   useEffect(() => {
     const socket = socketService.getSocket()
 
-    socket.on("send-offer", ({ roomId }: { roomId: string }) => {
-        console.log('send-offer received - roomId', roomId);
-        setRoomId(roomId);
-        setTracks()
-    })
-
-    socket.on("add-ice-candidate", ({ candidate }) => {
-        console.log("add ice candidate from remote");
-        peerService.addIceCandidate(candidate);
-    })
-
-    socket.on("offer", async ({roomId, offer}: { roomId: string, offer: RTCSessionDescriptionInit }) => {
-        console.log("offer received ");
-        setRoomId(roomId)
-
-        setTracks()
-
-        const answer = await peerService.getAnswer(offer)
-        console.log("sending answer");
-        socket.emit('answer', { roomId, answer })
-
-    })
-
-    socket.on("answer", ({ answer }: { answer: RTCSessionDescriptionInit }) => {
-        console.log('answer received');
-        peerService.setLocalDescription(answer)
-        console.log("loop closed");
-    })
+    socket.on("send-offer", handleSendOffer)
+    socket.on("add-ice-candidate", handleAddIceCandidate)
+    socket.on("offer", handleOnOffer)
+    socket.on("answer", handleOnAnswer)
 
     return () => {
-        // socket.disconnect()
+        socket.off("send-offer", handleSendOffer)
+        socket.off("add-ice-candidate", handleAddIceCandidate)
+        socket.off("offer", handleOnOffer)
+        socket.off("answer", handleOnAnswer)
     }
-  }, [])
+  }, [handleAddIceCandidate, handleOnAnswer, handleOnOffer, handleSendOffer])
 
   const handlePass = () => {
     setRemoteStream(null);

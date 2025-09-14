@@ -1,11 +1,6 @@
 import { Socket } from "socket.io";
 import { RoomManager } from "./roomManager";
-
-export interface User {
-    socket: Socket;
-    id: string;
-}
-
+import { AddIceCandidateData, AnswerData, OfferData, User } from "../types";
 export class UserManager {
     private users: User[];
     private queue: string[];
@@ -29,6 +24,7 @@ export class UserManager {
     removeUser(socketId: string) {
         this.users = this.users.filter(x => x.socket.id !== socketId);
         this.queue = this.queue.filter(x => x !== socketId);
+        
     }
 
     clearQueue() {
@@ -54,16 +50,16 @@ export class UserManager {
     }
 
     initListeners(socket: Socket) {
-        socket.on("offer", ({offer, roomId}: {offer: string, roomId: string}) => {
+        socket.on("offer", ({ roomId, offer }: OfferData) => {
             this.roomManager.onOffer(roomId, offer, socket.id);
         })
 
-        socket.on("answer",({ roomId, answer }: {roomId: string, answer: string }) => {
+        socket.on("answer",({ roomId, answer }: AnswerData) => {
             this.roomManager.onAnswer(roomId, answer, socket.id);
         })
 
-        socket.on("add-ice-candidate", ({candidate, roomId, type}) => {
-            this.roomManager.onIceCandidates(roomId, socket.id, candidate, type);
+        socket.on("add-ice-candidate", ({ roomId, candidate }: AddIceCandidateData) => {
+            this.roomManager.onIceCandidates(roomId, socket.id, candidate);
         });
     }
 
