@@ -26,8 +26,20 @@ export class UserManager {
         
         this.users = this.users.filter(x => x.socket.id !== socketId);
         this.queue = this.queue.filter(x => x !== socketId);
-        console.log('updated queue', this.queue);
-        console.log('updated queue length', this.queue.length);
+
+        // Check if user was in a room
+        const room = this.roomManager.getRoomByUser(socketId);
+        if (room) {
+            console.log(`User ${socketId} was in room ${room.id}, cleaning up...`);
+            const roommate = this.roomManager.getRoommate(room.id, socketId);
+            this.roomManager.deleteRoom(room.id);
+
+            if (roommate) {
+                roommate.socket.emit("lobby"); // send them back
+                this.queue.push(roommate.socket.id); // requeue
+                this.clearQueue();
+            }
+        }
     }
 
     clearQueue() {
@@ -75,8 +87,6 @@ export class UserManager {
             this.clearQueue();
             console.log('queue after clearing', this.queue);
             
-            console.log('getting roommate');
-            
             const roommate = this.roomManager.getRoommate(roomId, socket.id);
             const deleted = this.roomManager.deleteRoom(roomId);
             console.log('room deleted', deleted);
@@ -87,27 +97,7 @@ export class UserManager {
                 this.queue.push(roommate.socket.id)
                 console.log('clearing queue, on pass - after pushing room mate', this.queue);
                 this.clearQueue();
-                console.log('queue after clearing', this.queue);
             }
-        });
-
-
-        socket.on("exit", ({ roomId }) => {
-            console.log('on exit, roomId', roomId);
-            
-            socket.disconnect();
-            const roommate = this.roomManager.getRoommate(roomId, socket.id);
-            const deleted = this.roomManager.deleteRoom(roomId);
-            console.log('room deleted', deleted);
-            
-            if (roommate) {
-                roommate.socket.emit('lobby')
-                console.log('pushing room mate to queue');
-                this.queue.push(roommate.socket.id);
-            }
-            console.log('clearing queue, on exit');
-            this.clearQueue()
         });
     }
-
 }

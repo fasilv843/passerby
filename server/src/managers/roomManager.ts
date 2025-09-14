@@ -4,8 +4,10 @@ let GLOBAL_ROOM_ID = 1;
 
 export class RoomManager {
     private rooms: Map<string, Room>
+    private userRoom: Map<string, string>;
     constructor() {
-        this.rooms = new Map<string, Room>();
+        this.rooms = new Map<string, Room>()
+        this.userRoom = new Map<string, string>();
     }
 
     createRoom(user1: User, user2: User) {
@@ -19,13 +21,26 @@ export class RoomManager {
         }
         
         this.rooms.set(roomId, room)
+        this.userRoom.set(user1.socket.id, roomId);
+        this.userRoom.set(user2.socket.id, roomId);
 
         // user1.socket.emit("send-offer", { roomId });
         user2.socket.emit("send-offer", { roomId });
     }
 
     deleteRoom(roomId: string) {
+        const room = this.rooms.get(roomId);
+        if (room) {
+            this.userRoom.delete(room.user1.socket.id);
+            this.userRoom.delete(room.user2.socket.id);
+        }
         return this.rooms.delete(roomId);
+    }
+
+    getRoomByUser(socketId: string) {
+        const roomId = this.userRoom.get(socketId);
+        if (!roomId) return;
+        return this.rooms.get(roomId);
     }
 
     onOffer(roomId: string, offer: string, senderSocketid: string) {

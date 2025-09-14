@@ -149,7 +149,7 @@ export default function Room({
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
     }
-    
+
     const socket = socketService.getSocket()
     socket.emit("pass", { roomId });
     peerService.reset(
@@ -173,18 +173,12 @@ export default function Room({
       remoteVideoRef.current.srcObject = null;
     }
 
-    if (roomId) {
-      const socket = socketService.getSocket()
-      socket.emit("exit", { roomId });
-  
-      if (remoteStream) {
-          remoteStream.getTracks().forEach(track => track.stop());
-          setRemoteStream(null);
-      }
-  
-      peerService.close()
+    if (remoteStream) {
+      remoteStream.getTracks().forEach(track => track.stop());
+      setRemoteStream(null);
     }
 
+    peerService.close()
 
     onExit()
   };
