@@ -1,14 +1,14 @@
 import { Socket } from "socket.io";
 
-export interface User {
-    socket: Socket;
-    id: string;
-}
+// export interface User {
+//     socket: Socket;
+//     id: string;
+// }
 
 export interface Room {
     id: string;
-    user1: User;
-    user2: User;
+    user1Id: string;
+    user2Id: string;
 }
 
 

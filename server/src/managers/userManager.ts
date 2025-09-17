@@ -1,67 +1,76 @@
-import { Socket } from "socket.io";
+import { Server, Socket } from "socket.io";
 import { RoomManager } from "./roomManager";
-import { AddIceCandidateData, AnswerData, OfferData, User } from "../types";
+import { AddIceCandidateData, AnswerData, OfferData } from "../types";
+import { redis } from "../configs/redisClient";
+
 export class UserManager {
-    private users: User[];
-    private queue: string[];
     private roomManager: RoomManager;
     
-    constructor() {
-        this.users = [];
-        this.queue = [];
-        this.roomManager = new RoomManager();
+    constructor(private io: Server) {
+        this.roomManager = new RoomManager(io);
     }
 
-    addUser(socket: Socket) {
-        this.users.push({
-            socket, id: socket.id
-        })
-        this.queue.push(socket.id);
-        this.clearQueue()
+    async addUser(socket: Socket) {
+        await redis.lpush('queue', socket.id)
+        await this.clearQueue()
         this.initListeners(socket);
     }
 
-    removeUser(socketId: string) {
+    async removeUser(socketId: string) {
         console.log('removing user', socketId);
-        
-        this.users = this.users.filter(x => x.socket.id !== socketId);
-        this.queue = this.queue.filter(x => x !== socketId);
+        await redis.lrem("queue", 0, socketId);
 
         // Check if user was in a room
-        const room = this.roomManager.getRoomByUser(socketId);
+        const roomId = await redis.get(`userRoom:${socketId}`);
+        if (!roomId) return
+
+        const room = await this.roomManager.getRoom(roomId)
         if (room) {
             console.log(`User ${socketId} was in room ${room.id}, cleaning up...`);
-            const roommate = this.roomManager.getRoommate(room.id, socketId);
+            const roommateId = await this.roomManager.getRoommate(room.id, socketId);
             this.roomManager.deleteRoom(room.id);
 
-            if (roommate) {
-                roommate.socket.emit("lobby"); // send them back
-                this.queue.push(roommate.socket.id); // requeue
-                this.clearQueue();
+            if (roommateId) {
+                this.io.to(roommateId).emit("lobby");
+                await redis.lpush('queue', roommateId)
+                await this.clearQueue();
             }
         }
     }
 
-    clearQueue() {
+    async clearQueue() {
         console.log("inside clear queues")
-        console.log(this.queue.length, 'queue length');
-        if (this.queue.length < 2) {
-            return;
+
+        while (true) {
+            const [id1, id2] = await Promise.all([redis.rpop("queue"), redis.rpop("queue")]);
+            console.log("id is " + id1 + " " + id2);
+
+            if (!id1 || !id2) {
+                if (id1) await redis.lpush("queue", id1);
+                break;
+            }
+
+            const sockets = this.io.of("/").sockets; // all connected sockets in default namespace
+            const user1Exists = sockets.has(id1);
+            const user2Exists = sockets.has(id2);
+
+            if (!user1Exists && !user2Exists) {
+                continue;
+            }
+
+            if (!user1Exists) {
+                await redis.lpush("queue", id2);
+                continue;
+            }
+
+            if (!user2Exists) {
+                await redis.lpush("queue", id1);
+                continue;
+            }
+
+            console.log("creating room");
+            await this.roomManager.createRoom(id1, id2);
         }
-
-        const id1 = this.queue.pop();
-        const id2 = this.queue.pop();
-        console.log("id is " + id1 + " " + id2);
-        const user1 = this.users.find(x => x.socket.id === id1);
-        const user2 = this.users.find(x => x.socket.id === id2);
-
-        if (!user1 || !user2) {
-            return;
-        }
-        console.log("creating room");
-
-        this.roomManager.createRoom(user1, user2);
-        this.clearQueue();
     }
 
     initListeners(socket: Socket) {
@@ -78,26 +87,24 @@ export class UserManager {
         });
 
 
-        socket.on("pass", ({ roomId }) => {
+        socket.on("pass", async ({ roomId }) => {
             console.log('on pass, roomId', roomId);
             
             console.log('pushing current user to queue');
-            this.queue.push(socket.id);
-            console.log('clearing queue, on pass - after pushing current user', this.queue);
-            this.clearQueue();
-            console.log('queue after clearing', this.queue);
+            await redis.lpush('queue', socket.id);
             
-            const roommate = this.roomManager.getRoommate(roomId, socket.id);
-            const deleted = this.roomManager.deleteRoom(roomId);
+            const roommateId = await this.roomManager.getRoommate(roomId, socket.id);
+            console.log(roommateId, 'roommateId');
+            
+            const deleted = await this.roomManager.deleteRoom(roomId);
             console.log('room deleted', deleted);
             
-            if (roommate) {
-                console.log('pushing room mate to queue');
-                roommate.socket.emit('lobby')
-                this.queue.push(roommate.socket.id)
-                console.log('clearing queue, on pass - after pushing room mate', this.queue);
-                this.clearQueue();
+            if (roommateId) {
+                this.io.to(roommateId).emit('lobby')
+                console.log('pushing roommate to queue');
+                await redis.lpush('queue', roommateId)
             }
+            await this.clearQueue();
         });
     }
 }

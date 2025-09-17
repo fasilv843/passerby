@@ -12,12 +12,15 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@types/redis": "^4.0.10",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.2"
   },
   "dependencies": {
+    "@socket.io/redis-adapter": "^8.3.0",
     "dotenv": "^17.2.2",
+    "ioredis": "^5.7.0",
     "socket.io": "^4.8.1"
   }
 }
