@@ -1,19 +1,20 @@
 import { Server } from "socket.io";
 import { UserManager } from "./managers/userManager";
-import dotenv from 'dotenv'
 import { createSocketAdapter } from "./configs/socketAdapter";
 import { envConfig } from "./configs/environments";
+import http from "http";
+import { register, startMetricsUpdater } from "./metrics";
 
-dotenv.config()
+const httpServer = http.createServer();
 
-const io = new Server(Number(envConfig.port), {
+const io = new Server(httpServer, {
     cors: {
         origin: envConfig.clientUrl
     }
 });
 
 
-async function start() {
+(async function start() {
 
   io.adapter(await createSocketAdapter());
 
@@ -28,20 +29,25 @@ async function start() {
       userManager.removeUser(socket.id);
     });
   });
+})();
 
-  console.log(`Server running on port ${envConfig.port}`);
-}
 
-start();
+// Start Prometheus metrics updater
+startMetricsUpdater(io);
 
-// const userManager = new UserManager();
 
-// io.on('connection', (socket) => {
-//     console.log('a user connected', socket.id);
-//     userManager.addUser(socket);
-//     socket.on('disconnect', () => {
-//         console.log('a user disconnected', socket.id);
-//         userManager.removeUser(socket.id);
-//     });
-// });
+httpServer.on("request", async (req, res) => {
+  if (req.url === "/metrics") {
+    res.setHeader("Content-Type", register.contentType);
+    res.end(await register.metrics());
+  } else {
+    res.statusCode = 404;
+    res.end("Not Found");
+  }
+});
+
+
+httpServer.listen(envConfig.port, () => {
+  console.log(`Server running on port ${envConfig.port}, metrics at /metrics`);
+});
 
