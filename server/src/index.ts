@@ -2,14 +2,13 @@ import { Server } from "socket.io";
 import { UserManager } from "./managers/userManager";
 import dotenv from 'dotenv'
 import { createSocketAdapter } from "./configs/socketAdapter";
+import { envConfig } from "./configs/environments";
 
 dotenv.config()
 
-const PORT = process.env.PORT || 3000;
-
-const io = new Server(Number(PORT), {
+const io = new Server(Number(envConfig.port), {
     cors: {
-        origin: process.env.CLIENT_URL
+        origin: envConfig.clientUrl
     }
 });
 
@@ -30,7 +29,7 @@ async function start() {
     });
   });
 
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server running on port ${envConfig.port}`);
 }
 
 start();
