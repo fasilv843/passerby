@@ -1,76 +1,63 @@
-import { Room, User } from "../types";
-
-let GLOBAL_ROOM_ID = 1;
+import { Server } from "socket.io";
+import { Room } from "../types";
+import { redis } from "../configs/redisClient";
+import { randomUUID } from 'crypto'
 
 export class RoomManager {
-    private rooms: Map<string, Room>
-    private userRoom: Map<string, string>;
-    constructor() {
-        this.rooms = new Map<string, Room>()
-        this.userRoom = new Map<string, string>();
-    }
 
-    createRoom(user1: User, user2: User) {
-        const roomId = this.generate().toString();
+    constructor(private io: Server) {}
+
+    async createRoom(user1Id: string, user2Id: string) {
+        const roomId = `room:${randomUUID()}`;
         console.log({ roomId });
 
         const room: Room = {
             id: roomId,
-            user1,
-            user2,
+            user1Id,
+            user2Id,
         }
         
-        this.rooms.set(roomId, room)
-        this.userRoom.set(user1.socket.id, roomId);
-        this.userRoom.set(user2.socket.id, roomId);
+        await redis.hset(roomId, room);
+        await redis.set(`userRoom:${user1Id}`, roomId);
+        await redis.set(`userRoom:${user2Id}`, roomId);
 
-        // user1.socket.emit("send-offer", { roomId });
-        user2.socket.emit("send-offer", { roomId });
+        this.io.to(user2Id).emit("send-offer", { roomId });
     }
 
-    deleteRoom(roomId: string) {
-        const room = this.rooms.get(roomId);
-        if (room) {
-            this.userRoom.delete(room.user1.socket.id);
-            this.userRoom.delete(room.user2.socket.id);
-        }
-        return this.rooms.delete(roomId);
+    async deleteRoom(roomId: string) {
+        const room = await this.getRoom(roomId)
+        console.log(room, 'room in delete room');
+        if (room.user1Id) await redis.del(`userRoom:${room.user1Id}`);
+        if (room.user2Id) await redis.del(`userRoom:${room.user2Id}`);
+        return await redis.del(roomId);
     }
 
-    getRoomByUser(socketId: string) {
-        const roomId = this.userRoom.get(socketId);
-        if (!roomId) return;
-        return this.rooms.get(roomId);
-    }
-
-    onOffer(roomId: string, offer: string, senderSocketid: string) {
-        const receivingUser = this.getRoommate(roomId, senderSocketid);
-        if (!receivingUser)  return;
-        receivingUser.socket.emit("offer", { offer, roomId })
+    async onOffer(roomId: string, offer: string, senderSocketid: string) {
+        const receiverId = await this.getRoommate(roomId, senderSocketid);
+        if (!receiverId)  return;
+        this.io.to(receiverId).emit("offer", { offer, roomId });
     }
     
-    onAnswer(roomId: string, answer: string, senderSocketid: string) {
-        const receivingUser = this.getRoommate(roomId, senderSocketid);
-        if (!receivingUser)  return;
-        receivingUser.socket.emit("answer", { answer, roomId });
+    async onAnswer(roomId: string, answer: string, senderSocketid: string) {
+        const receiverId = await this.getRoommate(roomId, senderSocketid);
+        if (!receiverId)  return;
+        this.io.to(receiverId).emit("answer", { answer, roomId });
     }
 
-    onIceCandidates(roomId: string, senderSocketid: string, candidate: any) {
-        const receivingUser = this.getRoommate(roomId, senderSocketid);
-        if (!receivingUser)  return;
-        receivingUser.socket.emit("add-ice-candidate", ({ candidate }));
+    async onIceCandidates(roomId: string, senderSocketid: string, candidate: any) {
+        const receiverId = await this.getRoommate(roomId, senderSocketid);
+        if (!receiverId)  return;
+        this.io.to(receiverId).emit("add-ice-candidate", ({ candidate }));
     }
 
-    getRoommate (roomId: string, socketId: string) {
-        const room = this.rooms.get(roomId);
-        if (!room) {
-            return;
-        }
-        return room.user1.socket.id === socketId ? room.user2: room.user1;
+    async getRoommate (roomId: string, userId: string): Promise<string | null> {
+        const room = await this.getRoom(roomId)
+        if (!room.id) return null;
+        return room.user1Id === userId ? room.user2Id : room.user1Id;
     }
 
-    generate() {
-        return GLOBAL_ROOM_ID++;
+    async getRoom(roomId: string): Promise<Room> {
+        return await redis.hgetall(roomId) as unknown as Room;
     }
 
 }
