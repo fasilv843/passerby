@@ -4,4 +4,4 @@ global:
 scrape_configs:
   - job_name: 'passerby-app'
     static_configs:
-      - targets: ['host.docker.internal:3000'] # use localhost or your server host
+      - targets: ['passerby-app:3000'] # use localhost or your server host

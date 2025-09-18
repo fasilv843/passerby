@@ -7,6 +7,7 @@ const envSchema = z.object({
     PORT: z.string().regex(/^\d+$/),
     REDIS_URL: z.url(),
     CLIENT_URL: z.url(),
+    LOKI_URL: z.url(),
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 });
 
@@ -23,5 +24,6 @@ export const envConfig = {
     port: Number(env.data.PORT),
     redisUrl: env.data.REDIS_URL,
     clientUrl: env.data.CLIENT_URL,
+    lokiUrl: env.data.LOKI_URL,
     nodeEnv: env.data.NODE_ENV,
 };

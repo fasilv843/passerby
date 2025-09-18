@@ -1,25 +1,26 @@
 import Redis from "ioredis";
 import { envConfig } from "./environments";
+import { logger } from "../utils/logger";
 
 export const redis = new Redis(envConfig.redisUrl);
 
 
 redis.on("connect", () => {
-  console.log("✅ Connected to Redis");
+  logger.info("Connected to Redis");
 });
 
 redis.on("ready", () => {
-  console.log("Redis is ready to use");
+  logger.info("Redis is ready to use");
 });
 
 redis.on("error", (err) => {
-  console.error("❌ Redis error:", err);
+  logger.error("Redis error:", err);
 });
 
 redis.on("close", () => {
-  console.warn("⚠ Redis connection closed");
+  logger.warn("Redis connection closed");
 });
 
 redis.on("reconnecting", (time: number) => {
-  console.log(`🔄 Redis reconnecting in ${time}ms`);
+  logger.info(`Redis reconnecting in ${time}ms`);
 });

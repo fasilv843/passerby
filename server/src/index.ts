@@ -3,7 +3,8 @@ import { UserManager } from "./managers/userManager";
 import { createSocketAdapter } from "./configs/socketAdapter";
 import { envConfig } from "./configs/environments";
 import http from "http";
-import { register, startMetricsUpdater } from "./metrics";
+import { connectionDurationHistogram, register, startMetricsUpdater } from "./metrics";
+import { logger } from "./utils/logger";
 
 const httpServer = http.createServer();
 
@@ -13,6 +14,7 @@ const io = new Server(httpServer, {
     }
 });
 
+const connectionStartTimes = new Map<string, number>();
 
 (async function start() {
 
@@ -21,11 +23,19 @@ const io = new Server(httpServer, {
   const userManager = new UserManager(io);
 
   io.on("connection", (socket) => {
-    console.log("user connected", socket.id);
+    connectionStartTimes.set(socket.id, Date.now());
+    logger.info(`user connected, socket_id: ${socket.id}`);
     userManager.addUser(socket);
 
-    socket.on("disconnect", () => {
-      console.log("user disconnected", socket.id);
+    socket.on("disconnect", async () => {
+      logger.info(`user disconnected, socket_id: ${socket.id}`);
+      const start = connectionStartTimes.get(socket.id);
+      if (start) {
+        const duration = (Date.now() - start) / 1000; // seconds
+        connectionDurationHistogram.observe(duration);
+        connectionStartTimes.delete(socket.id);
+      }
+
       userManager.removeUser(socket.id);
     });
   });
@@ -48,6 +58,6 @@ httpServer.on("request", async (req, res) => {
 
 
 httpServer.listen(envConfig.port, () => {
-  console.log(`Server running on port ${envConfig.port}, metrics at /metrics`);
+  logger.info(`Server running on port ${envConfig.port}, metrics at /metrics`);
 });
 
