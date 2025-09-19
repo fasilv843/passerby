@@ -1,0 +1,47 @@
+// Scrape metrics from your Node.js app (Prometheus format)
+prometheus.scrape "node_app" {
+  targets = [
+    {
+      "__address__" = "passerby-app:3000",
+      "env"         = env("NODE_ENV"),
+    },
+  ]
+
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+// Remote write to Grafana Cloud Prometheus
+prometheus.remote_write "grafana_cloud" {
+   endpoint {
+      name = "hosted-prometheus"
+      url  = env("GRAFANA_CLOUD_PROM_URL")
+  
+      basic_auth {
+        username = env("GRAFANA_CLOUD_PROM_USERNAME")
+        password = env("GRAFANA_CLOUD_API_KEY")
+      }
+   }
+}
+
+
+loki.source.docker "docker_logs" {
+  host = "unix:///var/run/docker.sock"
+  targets = [
+    { container_name = "*" },
+  ]
+  forward_to = [loki.write.grafana_cloud.receiver]
+  labels = {
+    env = env("NODE_ENV"),
+  }
+}
+
+// Send logs to Grafana Cloud Loki
+loki.write "grafana_cloud" {
+  endpoint {
+    url = env("GRAFANA_CLOUD_LOKI_URL")
+    basic_auth {
+      username = env("GRAFANA_CLOUD_LOKI_USERNAME")
+      password = env("GRAFANA_CLOUD_API_KEY")
+    }
+  }
+}

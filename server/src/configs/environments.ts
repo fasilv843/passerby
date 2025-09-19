@@ -1,13 +1,14 @@
 import { z } from "zod";
 import dotenv from "dotenv";
 
-dotenv.config();
+const NODE_ENV = process.env.NODE_ENV || "development";
+
+dotenv.config({ path: `.env.${NODE_ENV}` });
 
 const envSchema = z.object({
     PORT: z.string().regex(/^\d+$/),
     REDIS_URL: z.url(),
     CLIENT_URL: z.url(),
-    LOKI_URL: z.url(),
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 });
 
@@ -21,9 +22,8 @@ if (!env.success) {
 }
 
 export const envConfig = {
+    nodeEnv: env.data.NODE_ENV,
     port: Number(env.data.PORT),
     redisUrl: env.data.REDIS_URL,
     clientUrl: env.data.CLIENT_URL,
-    lokiUrl: env.data.LOKI_URL,
-    nodeEnv: env.data.NODE_ENV,
 };
