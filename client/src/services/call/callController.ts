@@ -6,6 +6,7 @@ import type { MatchedPayload, MatchPrefs, SearchScope, SignalMessage } from "../
 import { PeerSession } from "../peer/peerSession";
 import type { PeerSessionOptions } from "../peer/peerSession";
 import { connectSignaling } from "../socketClient";
+import { Store } from "../store";
 import type { SignalingSocket } from "../socketClient";
 import { TypingNotifier } from "./typingNotifier";
 
@@ -59,9 +60,7 @@ const systemEntry = (text: string): ChatEntry => ({ id: newId(), from: "system",
  * PeerSession per match, and chat. No React here; the useCall hook
  * subscribes to it, so components only render state and forward clicks.
  */
-export class CallController {
-  private state: CallState = INITIAL_CALL_STATE;
-  private readonly listeners = new Set<() => void>();
+export class CallController extends Store<CallState> {
   private socket: SocketLike | null = null;
   private session: PeerSessionLike | null = null;
   /** Identifies the current session, so callbacks from a closed one are ignored. */
@@ -71,17 +70,9 @@ export class CallController {
   private readonly options: CallControllerOptions;
 
   constructor(options: CallControllerOptions) {
+    super(INITIAL_CALL_STATE);
     this.options = options;
   }
-
-  // ---- store interface (for useSyncExternalStore) ----
-
-  subscribe = (listener: () => void) => {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  };
-
-  getState = () => this.state;
 
   // ---- lifecycle ----
 
@@ -136,7 +127,7 @@ export class CallController {
 
   /** Skip the current partner. The server puts us back in the queue. */
   pass() {
-    const roomId = this.state.roomId;
+    const roomId = this.getState().roomId;
     if (!roomId || !this.socket) return;
     this.session?.chat.sendBye();
     this.socket.emit("pass", { roomId });
@@ -239,7 +230,7 @@ export class CallController {
     this.session = null;
     this.typing.reset();
     this.setStrangerTyping(false);
-    const { roomId, remoteStream, connectionState, stats } = this.state;
+    const { roomId, remoteStream, connectionState, stats } = this.getState();
     if (roomId || remoteStream || connectionState || stats) {
       this.setState({ roomId: null, remoteStream: null, connectionState: null, stats: null });
     }
@@ -257,17 +248,12 @@ export class CallController {
   }
 
   private appendChat(entry: ChatEntry) {
-    this.setChat({ entries: [...this.state.chat.entries, entry] });
+    this.setChat({ entries: [...this.getState().chat.entries, entry] });
   }
 
   private setChat(patch: Partial<CallState["chat"]>) {
-    const chat = this.state.chat;
+    const chat = this.getState().chat;
     const changed = (Object.keys(patch) as (keyof CallState["chat"])[]).some((k) => chat[k] !== patch[k]);
     if (changed) this.setState({ chat: { ...chat, ...patch } });
-  }
-
-  private setState(patch: Partial<CallState>) {
-    this.state = { ...this.state, ...patch };
-    this.listeners.forEach((listener) => listener());
   }
 }

@@ -16,10 +16,16 @@ export default function Home() {
               <p className="text-gray-600 mb-8">
                 Passerby connects you with people across the world. No sign up required.
               </p>
-              <Link to="/room" className="btn btn-primary">
-                <span className="icon">forum</span>
-                Talk with a Stranger
-              </Link>
+              <div className="flex flex-wrap gap-3">
+                <Link to="/room" className="btn btn-primary">
+                  <span className="icon">forum</span>
+                  Talk with a Stranger
+                </Link>
+                <Link to="/group" className="btn btn-ghost border">
+                  <span className="icon">groups</span>
+                  Start a group call
+                </Link>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="h-40 md:h-52 rounded-lg bg-white shadow border flex items-center justify-center">

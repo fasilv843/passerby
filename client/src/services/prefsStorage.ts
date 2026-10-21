@@ -38,3 +38,22 @@ function safeStorage(): Storage | undefined {
     return undefined;
   }
 }
+
+const NAME_KEY = "passerby:displayName:v1";
+
+/** The name used in group rooms, remembered between visits. */
+export function loadDisplayName(storage: Pick<Storage, "getItem"> | undefined = safeStorage()): string {
+  try {
+    return storage?.getItem(NAME_KEY)?.slice(0, 30) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function saveDisplayName(name: string, storage: Pick<Storage, "setItem"> | undefined = safeStorage()) {
+  try {
+    storage?.setItem(NAME_KEY, name.trim().slice(0, 30));
+  } catch {
+    // Not remembered; nothing else breaks.
+  }
+}
