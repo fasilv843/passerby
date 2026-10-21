@@ -1,6 +1,5 @@
 import { Server, Socket } from "socket.io";
 import { RoomManager } from "./roomManager";
-import { AddIceCandidateData, AnswerData, OfferData } from "../types";
 import { redis } from "../configs/redisClient";
 
 export class UserManager {
@@ -11,9 +10,11 @@ export class UserManager {
     }
 
     async addUser(socket: Socket) {
+        // Register listeners first: once paired, this user may send a signal
+        // before the queue processing below has finished.
+        this.initListeners(socket);
         await redis.lpush('queue', socket.id)
         await this.clearQueue()
-        this.initListeners(socket);
     }
 
     async removeUser(socketId: string) {
@@ -74,20 +75,12 @@ export class UserManager {
     }
 
     initListeners(socket: Socket) {
-        socket.on("offer", ({ roomId, offer }: OfferData) => {
-            this.roomManager.onOffer(roomId, offer, socket.id);
-        })
-
-        socket.on("answer",({ roomId, answer }: AnswerData) => {
-            this.roomManager.onAnswer(roomId, answer, socket.id);
-        })
-
-        socket.on("add-ice-candidate", ({ roomId, candidate }: AddIceCandidateData) => {
-            this.roomManager.onIceCandidates(roomId, socket.id, candidate);
+        socket.on("signal", (data: unknown) => {
+            this.roomManager.onSignal(data, socket.id);
         });
 
-
-        socket.on("pass", async ({ roomId }) => {
+        socket.on("pass", async ({ roomId }: { roomId?: string } = {}) => {
+            if (typeof roomId !== "string") return;
             console.log('on pass, roomId', roomId);
             
             console.log('pushing current user to queue');
