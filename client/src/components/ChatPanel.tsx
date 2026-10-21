@@ -5,31 +5,31 @@ import type { ChatEntry } from "../types/chat";
 
 interface ChatPanelProps {
   entries: ChatEntry[];
-  /** True once the data channel is open. */
+  /** True once the chat connection is open. */
   canSend: boolean;
   strangerTyping: boolean;
+  /** Returns true if the message was sent, so the draft can be cleared. */
   onSend: (text: string) => boolean;
-  onTyping: (active: boolean) => void;
+  onDraftChange: (text: string) => void;
+  onDraftBlur: () => void;
   className?: string;
 }
 
-/** Send "typing" at most this often while the user keeps typing. */
-const TYPING_REFRESH_MS = 2000;
-/** Send "stopped typing" after this long without a keystroke. */
-const TYPING_IDLE_MS = 3000;
-
+/**
+ * Message list and composer. Typing signals and sending are handled by the caller.
+ * Give it a `key` per conversation so the draft resets for each new chat.
+ */
 export default function ChatPanel({
   entries,
   canSend,
   strangerTyping,
   onSend,
-  onTyping,
+  onDraftChange,
+  onDraftBlur,
   className = "",
 }: ChatPanelProps) {
   const [draft, setDraft] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
-  const lastTypingSentRef = useRef(0);
-  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep the newest message in view.
   useEffect(() => {
@@ -37,51 +37,17 @@ export default function ChatPanel({
     if (list) list.scrollTop = list.scrollHeight;
   }, [entries, strangerTyping]);
 
-  // Clear the draft and typing state when the chat ends or a new one starts.
-  useEffect(() => {
-    if (!canSend) setDraft("");
-    lastTypingSentRef.current = 0;
-  }, [canSend]);
-
-  useEffect(() => () => {
-    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-  }, []);
-
-  const stopTyping = () => {
-    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-    idleTimerRef.current = null;
-    if (lastTypingSentRef.current) {
-      lastTypingSentRef.current = 0;
-      onTyping(false);
-    }
-  };
-
-  const handleChange = (value: string) => {
-    setDraft(value);
-    if (!canSend) return;
-    if (!value.trim()) {
-      stopTyping();
-      return;
-    }
-    const now = Date.now();
-    if (now - lastTypingSentRef.current > TYPING_REFRESH_MS) {
-      lastTypingSentRef.current = now;
-      onTyping(true);
-    }
-    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-    idleTimerRef.current = setTimeout(stopTyping, TYPING_IDLE_MS);
+  const changeDraft = (text: string) => {
+    setDraft(text);
+    onDraftChange(text);
   };
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
-    if (!draft.trim() || !canSend) return;
-    if (onSend(draft)) {
-      setDraft("");
-      stopTyping();
-    }
+    if (canSend && draft.trim() && onSend(draft)) setDraft("");
   };
 
-  // Enter sends; Shift+Enter adds a new line.
+  // Enter sends; Shift+Enter adds a new line. Ignore Enter while an IME is composing.
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
@@ -92,29 +58,10 @@ export default function ChatPanel({
   return (
     <section className={`flex flex-col min-h-0 rounded-lg border bg-white ${className}`} aria-label="Chat">
       <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2" aria-live="polite">
-        {entries.map((entry) =>
-          entry.from === "system" ? (
-            <p key={entry.id} className="text-center text-xs text-gray-500 py-1">
-              {entry.text}
-            </p>
-          ) : (
-            <div key={entry.id} className={`flex ${entry.from === "me" ? "justify-end" : "justify-start"}`}>
-              <p
-                className={`max-w-[80%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${
-                  entry.from === "me"
-                    ? "bg-brand text-white rounded-br-sm"
-                    : "bg-gray-100 text-gray-900 rounded-bl-sm"
-                }`}
-              >
-                <span className="sr-only">{entry.from === "me" ? "You: " : "Stranger: "}</span>
-                {entry.text}
-              </p>
-            </div>
-          )
-        )}
-        {strangerTyping && (
-          <p className="text-xs text-gray-500 italic px-1">Stranger is typing…</p>
-        )}
+        {entries.map((entry) => (
+          <ChatLine key={entry.id} entry={entry} />
+        ))}
+        {strangerTyping ? <p className="text-xs text-gray-500 italic px-1">Stranger is typing…</p> : null}
       </div>
 
       <form onSubmit={submit} className="flex items-end gap-2 border-t p-2">
@@ -125,9 +72,9 @@ export default function ChatPanel({
           value={draft}
           maxLength={MAX_CHAT_LENGTH}
           disabled={!canSend}
-          onChange={(e) => handleChange(e.target.value)}
+          onChange={(e) => changeDraft(e.target.value)}
           onKeyDown={handleKeyDown}
-          onBlur={stopTyping}
+          onBlur={onDraftBlur}
           placeholder={canSend ? "Type a message" : "Chat opens when you're connected"}
           className="flex-1 resize-none rounded-md border px-3 py-2 text-sm max-h-28 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:bg-gray-50"
         />
@@ -136,5 +83,25 @@ export default function ChatPanel({
         </button>
       </form>
     </section>
+  );
+}
+
+function ChatLine({ entry }: { entry: ChatEntry }) {
+  if (entry.from === "system") {
+    return <p className="text-center text-xs text-gray-500 py-1">{entry.text}</p>;
+  }
+
+  const mine = entry.from === "me";
+  return (
+    <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+      <p
+        className={`max-w-[80%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${
+          mine ? "bg-brand text-white rounded-br-sm" : "bg-gray-100 text-gray-900 rounded-bl-sm"
+        }`}
+      >
+        <span className="sr-only">{mine ? "You: " : "Stranger: "}</span>
+        {entry.text}
+      </p>
+    </div>
   );
 }

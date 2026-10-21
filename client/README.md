@@ -1,69 +1,46 @@
-# React + TypeScript + Vite
+# Passerby client
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + TypeScript + Vite. Video and text chat with strangers over WebRTC.
 
-Currently, two official plugins are available:
+## Layout
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Logic lives outside components, so components only render state and forward clicks.
 
-## Expanding the ESLint configuration
+```
+src/
+  pages/            screens: Home, RoomPage (lobby ↔ room), Lobby, Room
+  components/       presentational pieces: VideoView, VideoFrame, ChatPanel, StatsPanel,
+                    ConnectionBadge, MatchPreferences, ActionBar, ...
+  hooks/            React adapters: useCall, useLocalMedia, usePrefs
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+  services/         stateful, browser APIs, no React
+    call/
+      callController.ts   one stranger-chat session: signaling, matching, peer, chat state
+      typingNotifier.ts   throttles "typing…" signals
+    peer/
+      peerSession.ts      RTCPeerConnection: perfect negotiation, ICE restart
+      chatChannel.ts      chat over an RTCDataChannel
+      qualityMonitor.ts   getStats() polling and adaptive video quality
+    socketClient.ts       typed Socket.IO connection
+    prefsStorage.ts       remembers lobby choices
 
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+  media/            pure WebRTC helpers: codec order, Opus SDP edits, stats math, adaptation, URL settings
+  lib/              pure helpers: chat protocol, labels and formatting, locales, ids
+  types/            the server contract (signaling.ts) and chat types
+  config/env.ts     VITE_SERVER_URL
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Data flows one way: `services` → `useCall` (via `useSyncExternalStore`) → `pages` → `components`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Scripts
 
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cp .env.example .env
+npm run dev      # Vite dev server
+npm test         # Vitest unit tests
+npm run lint
+npm run build
 ```
+
+URL switches for testing call quality (`?stats=1&codec=vp8`, ...) are listed in
+`../docs/network-testing.md`.

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { MatchMode, MatchPrefs } from "../types/signaling";
-import { ANY, countryName, languageName, sortedCountries, sortedLanguages } from "../utils/locales";
+import { ANY, countryName, languageName, sortedCountries, sortedLanguages } from "../lib/locales";
 
 interface MatchPreferencesProps {
   prefs: MatchPrefs;
