@@ -37,6 +37,22 @@ const envSchema = z.object({
 
   /** How long a user waits at each search stage before it widens (exact → language → anyone). */
   MATCH_WIDEN_MS: integer.default("10000"),
+
+  // ---- Group rooms (mediasoup SFU) ----
+  /** Local interface the SFU listens on for media. */
+  SFU_LISTEN_IP: z.string().default("0.0.0.0"),
+  /**
+   * Address browsers use to reach the SFU: the server's public IP or hostname.
+   * The default only works when the browser runs on the same machine.
+   */
+  SFU_ANNOUNCED_ADDRESS: z.string().default("127.0.0.1"),
+  /** UDP/TCP port range for media. Open it in the firewall. */
+  SFU_MIN_PORT: integer.default("40000"),
+  SFU_MAX_PORT: integer.default("40100"),
+  /** mediasoup worker processes (one per CPU core is typical). */
+  SFU_WORKERS: integer.default("1"),
+  /** Most people allowed in one group room. */
+  GROUP_MAX_PEERS: integer.default("6"),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -58,4 +74,12 @@ export const env = {
   turnSecret: raw.TURN_SECRET,
   turnTtlSeconds: Number(raw.TURN_TTL),
   matchWidenMs: Number(raw.MATCH_WIDEN_MS),
+  sfu: {
+    listenIp: raw.SFU_LISTEN_IP,
+    announcedAddress: raw.SFU_ANNOUNCED_ADDRESS,
+    minPort: Number(raw.SFU_MIN_PORT),
+    maxPort: Number(raw.SFU_MAX_PORT),
+    workers: Math.max(1, Number(raw.SFU_WORKERS)),
+    maxPeersPerRoom: Math.max(2, Number(raw.GROUP_MAX_PEERS)),
+  },
 };

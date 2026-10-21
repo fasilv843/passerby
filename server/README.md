@@ -1,7 +1,10 @@
 # Passerby server
 
-Socket.IO signaling and matchmaking, with Redis for shared state. The server never touches media:
-it pairs users, relays WebRTC signaling between them, and hands out TURN credentials.
+Socket.IO signaling and matchmaking, with Redis for shared state.
+
+- **Stranger chat (1:1):** the server never touches media. It pairs users, relays WebRTC signaling
+  between them, and hands out TURN credentials.
+- **Group rooms:** media goes through a mediasoup SFU in this process.
 
 ## Layout
 
@@ -38,7 +41,18 @@ src/
     signalRelay.ts         forwards SDP and ICE candidates to the roommate
 
   redis/keys.ts            every Redis key in one place
+
+  sfu/                     group rooms through mediasoup (namespace "/group")
+    createGroupRooms.ts    starts workers, registry and the namespace
+    registerGroupHandlers.ts  per-connection requests → room methods
+    groupRoomRegistry.ts   rooms on this instance, empty-room cleanup
+    groupRoom.ts           router + peers: transports, produce, consume, layers
+    groupPeer.ts           one person's transports, producers, consumers
+    workerPool.ts          mediasoup worker processes
+    mediaConfig.ts         codecs and transport options
 ```
+
+Group rooms are explained in `../docs/group-rooms.md`.
 
 Each layer only talks downwards: socket handlers → services → stores → Redis.
 
@@ -48,7 +62,7 @@ Each layer only talks downwards: socket handlers → services → stores → Red
 npm run dev        # ts-node + nodemon
 npm run build      # compile to dist/ (and copy the Lua script)
 npm start          # run dist/
-npm test           # unit tests; integration tests run too when Redis is reachable at REDIS_URL
+npm test           # unit + mediasoup tests; Redis matchmaking tests run when Redis is reachable at REDIS_URL
 ```
 
 Copy `.env.example` to `.env` first. TURN setup is in `../deploy/coturn/README.md`.

@@ -10,6 +10,7 @@ export default defineConfig({
       CLIENT_URL: "http://localhost:5173",
       NODE_ENV: "test",
       MATCH_WIDEN_MS: "800",
+      GROUP_MAX_PEERS: "3",
     },
   },
 });

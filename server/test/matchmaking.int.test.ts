@@ -57,7 +57,7 @@ describe.skipIf(!available)("matchmaking (needs Redis)", () => {
     await redis.flushdb();
     // Two server instances sharing Redis, like a scaled deployment.
     for (let i = 0; i < 2; i++) {
-      const app = createApp();
+      const app = await createApp();
       const http = createServer();
       app.io.attach(http);
       await new Promise<void>((resolve) => http.listen(0, resolve));
