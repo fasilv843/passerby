@@ -24,3 +24,17 @@ export interface ConnectionPath {
   relayProtocol?: string;
   rttMs?: number;
 }
+
+export type MatchMode = "video" | "text";
+
+/** "*" means "anyone". Sent to the server when connecting. */
+export interface MatchPrefs {
+  mode: MatchMode;
+  /** ISO 639-1 code, e.g. "ml", or "*" */
+  language: string;
+  /** ISO 3166-1 alpha-2 code, e.g. "IN", or "*" */
+  country: string;
+}
+
+/** How wide the server's current search is: it widens while nobody matches. */
+export type SearchScope = "exact" | "language" | "anyone";

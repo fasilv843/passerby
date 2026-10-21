@@ -1,50 +1,41 @@
 import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import MatchPreferences from "../components/MatchPreferences";
+import Loading from "../components/Loading";
+import type { MatchPrefs } from "../types/signaling";
+
 interface LobbyProps {
+  prefs: MatchPrefs;
+  onPrefsChange: (prefs: MatchPrefs) => void;
   onJoin: () => void;
   localStream: MediaStream | null;
   permissionError: string | null;
 }
 
-export default function Lobby({ onJoin, permissionError, localStream }: LobbyProps) {
+export default function Lobby({ prefs, onPrefsChange, onJoin, permissionError, localStream }: LobbyProps) {
   const localVideoRef = useRef<HTMLVideoElement>(null);
+  const isVideo = prefs.mode === "video";
+  const canJoin = !isVideo || (!!localStream && !permissionError);
 
-//     const getPermissions = async () => {
-//       try {
-//         const stream = await navigator.mediaDevices.getUserMedia({
-//           video: true,
-//           audio: true,
-//         });
-//         if (localVideoRef.current) {
-//           localVideoRef.current.srcObject = stream;
-//           localVideoRef.current.play();
-//         }
-//       } catch (err: any) {
-//         if (err.name === "NotAllowedError") {
-//           setPermissionError("Camera and microphone permission required");
-//         } else if (err.name === "NotFoundError") {
-//           setPermissionError("Camera or microphone not found");
-//         } else {
-//           setPermissionError("Unable to access camera/microphone");
-//         }
-//       }
-//     };
-//     getPermissions();
-//   }, []);
-    useEffect(() => {
-        if (localVideoRef.current) {
-            localVideoRef.current.srcObject = localStream;
-            localVideoRef.current.play();
-        }
-    }, [localStream])
+  useEffect(() => {
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = localStream;
+      if (localStream) localVideoRef.current.play().catch(() => {});
+    }
+  }, [localStream]);
+
   return (
     <>
       <main className="flex-1">
-        <div className="max-w-6xl mx-auto px-4 py-6 grid gap-4 md:gap-6 grid-cols-1 md:grid-cols-2">
+        <div className="max-w-6xl mx-auto px-4 py-6 grid gap-6 grid-cols-1 md:grid-cols-2 items-start">
           <div className="aspect-video w-full bg-black/5 rounded-lg overflow-hidden border flex items-center justify-center">
-            {permissionError ? (
-              <p className="text-red-500">{permissionError}</p>
-            ) : (
+            {!isVideo ? (
+              <p className="text-gray-500 text-sm px-6 text-center">
+                Text-only chat. Your camera and microphone stay off.
+              </p>
+            ) : permissionError ? (
+              <p className="text-red-500 text-sm px-6 text-center">{permissionError}</p>
+            ) : localStream ? (
               <video
                 ref={localVideoRef}
                 autoPlay
@@ -52,29 +43,26 @@ export default function Lobby({ onJoin, permissionError, localStream }: LobbyPro
                 muted
                 className="w-full h-full object-cover"
               />
+            ) : (
+              <Loading />
             )}
           </div>
-          <div className="aspect-video w-full bg-black/5 rounded-lg overflow-hidden border flex items-center justify-center">
-            <p>Join to Talk</p>
+          <div className="rounded-lg border p-4 md:p-6">
+            <MatchPreferences prefs={prefs} onChange={onPrefsChange} />
           </div>
         </div>
       </main>
 
       <div className="sticky bottom-0 border-t bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-center gap-3">
-          <Link to="/" className="btn btn-primary">
+          <Link to="/" className="btn btn-ghost">
             Go Back
           </Link>
-          <button
-            className="btn btn-primary"
-            onClick={onJoin}
-            disabled={!!permissionError}
-          >
-            Join
+          <button className="btn btn-primary" onClick={onJoin} disabled={!canJoin}>
+            {isVideo ? "Join video chat" : "Join text chat"}
           </button>
         </div>
       </div>
     </>
   );
 }
-  

@@ -23,6 +23,8 @@ const envSchema = z.object({
     TURN_SECRET: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(16).optional()),
     // Lifetime of generated TURN credentials, in seconds.
     TURN_TTL: z.string().regex(/^\d+$/).default("3600"),
+    // How long a user waits at each search stage before it widens (exact → language → anyone).
+    MATCH_WIDEN_MS: z.string().regex(/^\d+$/).default("10000"),
 });
 
 
@@ -43,4 +45,5 @@ export const envConfig = {
     turnUrls: csv(env.data.TURN_URLS),
     turnSecret: env.data.TURN_SECRET,
     turnTtl: Number(env.data.TURN_TTL),
+    matchWidenMs: Number(env.data.MATCH_WIDEN_MS),
 };
