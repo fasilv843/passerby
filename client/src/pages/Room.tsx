@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Loading from "../components/Loading";
 import ConnectionBadge from "../components/ConnectionBadge";
 import ChatPanel from "../components/ChatPanel";
+import StatsPanel from "../components/StatsPanel";
+import { readMediaSettings } from "../media/settings";
+import type { CallStats } from "../media/stats";
 import { PeerSession } from "../services/peerSession";
 import socketService from "../services/socketService";
 import type {
-  ConnectionPath,
   MatchedPayload,
   MatchPrefs,
   SearchScope,
@@ -28,6 +30,7 @@ const systemEntry = (text: string): ChatEntry => ({ id: newId(), from: "system",
 
 export default function Room({ prefs, localStream, onExit }: RoomProps) {
   const isVideo = prefs.mode === "video";
+  const settings = useMemo(() => readMediaSettings(), []);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const sessionRef = useRef<PeerSession | null>(null);
@@ -38,7 +41,8 @@ export default function Room({ prefs, localStream, onExit }: RoomProps) {
   const [searchScope, setSearchScope] = useState<SearchScope | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | null>(null);
-  const [path, setPath] = useState<ConnectionPath | null>(null);
+  const [stats, setStats] = useState<CallStats | null>(null);
+  const [showStats, setShowStats] = useState(settings.showStats);
   const [chatEntries, setChatEntries] = useState<ChatEntry[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
   const [strangerTyping, setStrangerTyping] = useState(false);
@@ -77,7 +81,7 @@ export default function Room({ prefs, localStream, onExit }: RoomProps) {
     setRoomId(null);
     setRemoteStream(null);
     setConnectionState(null);
-    setPath(null);
+    setStats(null);
     setChatOpen(false);
     setTyping(false);
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
@@ -119,10 +123,11 @@ export default function Room({ prefs, localStream, onExit }: RoomProps) {
         polite,
         iceServers,
         localStream: localStreamRef.current,
+        settings,
         sendSignal: (message) => socket.emit("signal", message),
         onRemoteStream: setRemoteStream,
         onConnectionStateChange: setConnectionState,
-        onPathChange: setPath,
+        onStats: setStats,
         onChatMessage: handleChatMessage,
         onChatOpenChange: setChatOpen,
       });
@@ -161,7 +166,7 @@ export default function Room({ prefs, localStream, onExit }: RoomProps) {
       endSession();
       socketService.disconnect();
     };
-  }, [prefs, endSession, handleChatMessage]);
+  }, [prefs, settings, endSession, handleChatMessage]);
 
   useEffect(() => () => {
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
@@ -237,7 +242,10 @@ export default function Room({ prefs, localStream, onExit }: RoomProps) {
                   {searching && <p className="text-sm text-gray-500 px-4 text-center">{statusText}</p>}
                 </div>
               )}
-              {roomId && <ConnectionBadge state={connectionState} path={path} />}
+              {roomId && <ConnectionBadge state={connectionState} path={stats?.path ?? null} />}
+              {roomId && showStats && (
+                <StatsPanel stats={stats} className="absolute left-2 right-2 bottom-2 sm:right-auto sm:max-w-[26rem] max-h-[70%] overflow-y-auto" />
+              )}
             </div>
             <div className="md:col-span-2 flex flex-col">{chat}</div>
           </div>
@@ -245,11 +253,12 @@ export default function Room({ prefs, localStream, onExit }: RoomProps) {
           <div className="max-w-2xl w-full mx-auto px-4 py-6 flex-1 flex flex-col min-h-[24rem] gap-2">
             <div className="relative h-7 flex items-center">
               {roomId ? (
-                <ConnectionBadge state={connectionState} path={path} />
+                <ConnectionBadge state={connectionState} path={stats?.path ?? null} />
               ) : (
                 <p className="text-sm text-gray-500" aria-live="polite">{statusText}</p>
               )}
             </div>
+            {roomId && showStats && <StatsPanel stats={stats} />}
             {chat}
           </div>
         )}
@@ -259,6 +268,13 @@ export default function Room({ prefs, localStream, onExit }: RoomProps) {
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-center gap-3">
           <button disabled={!roomId} className="btn btn-primary" onClick={handlePass}>
             Pass
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={() => setShowStats((v) => !v)}
+            aria-pressed={showStats}
+          >
+            {showStats ? "Hide stats" : "Stats"}
           </button>
           <button className="btn btn-ghost" onClick={handleExit}>
             Exit
