@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo } from "react";
 import type { MediaSettings } from "../media/settings";
 import { CallController } from "../services/call/callController";
 import type { MatchPrefs } from "../types/signaling";
+import { useStore } from "./useStore";
 
 /**
  * Runs a CallController for as long as the component is mounted and
@@ -20,6 +21,6 @@ export function useCall(prefs: MatchPrefs, localStream: MediaStream | null, sett
     return () => controller.stop();
   }, [controller]);
 
-  const state = useSyncExternalStore(controller.subscribe, controller.getState);
+  const state = useStore(controller);
   return { state, controller };
 }
