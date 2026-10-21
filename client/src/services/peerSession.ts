@@ -1,4 +1,6 @@
 import type { ConnectionPath, SignalMessage } from "../types/signaling";
+import { MAX_CHAT_LENGTH, newId, parseChatWireMessage } from "../types/chat";
+import type { ChatWireMessage } from "../types/chat";
 
 interface PeerSessionOptions {
   roomId: string;
@@ -9,6 +11,8 @@ interface PeerSessionOptions {
   onRemoteStream: (stream: MediaStream) => void;
   onConnectionStateChange: (state: RTCPeerConnectionState) => void;
   onPathChange: (path: ConnectionPath | null) => void;
+  onChatMessage: (message: ChatWireMessage) => void;
+  onChatOpenChange: (open: boolean) => void;
 }
 
 /** How long a "disconnected" connection may stay that way before we restart ICE. */
@@ -42,6 +46,7 @@ export class PeerSession {
   private statsTimer: ReturnType<typeof setInterval> | null = null;
   private disconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly fallbackRemoteStream = new MediaStream();
+  private readonly chat: RTCDataChannel;
 
   constructor(opts: PeerSessionOptions) {
     this.opts = opts;
@@ -59,6 +64,18 @@ export class PeerSession {
     // unused audio and video section in every SDP.)
     const stream = opts.localStream;
     stream?.getTracks().forEach((track) => this.pc.addTrack(track, stream));
+
+    // Text chat runs peer to peer over SCTP inside the same DTLS connection.
+    // `negotiated: true` with a fixed id means both peers create the channel
+    // themselves, so there's no "who opens it" race and no ondatachannel handler.
+    // In text-only mode this channel is the only thing in the SDP.
+    this.chat = this.pc.createDataChannel("chat", { negotiated: true, id: 0, ordered: true });
+    this.chat.onopen = () => opts.onChatOpenChange(true);
+    this.chat.onclose = () => opts.onChatOpenChange(false);
+    this.chat.onmessage = ({ data }) => {
+      const message = parseChatWireMessage(data);
+      if (message) opts.onChatMessage(message);
+    };
 
     window.addEventListener("online", this.handleNetworkChange);
     this.networkInfo()?.addEventListener("change", this.handleNetworkChange);
@@ -101,6 +118,27 @@ export class PeerSession {
     } catch (err) {
       console.error("[peer] failed to handle signal", err);
     }
+  }
+
+  /** Sends a chat message. Returns it, or null if the channel isn't open. */
+  sendChat(text: string): Extract<ChatWireMessage, { type: "message" }> | null {
+    const trimmed = text.trim().slice(0, MAX_CHAT_LENGTH);
+    if (!trimmed) return null;
+    const message = { type: "message" as const, id: newId(), text: trimmed, sentAt: Date.now() };
+    return this.sendOnChannel(message) ? message : null;
+  }
+
+  sendTyping(active: boolean) {
+    this.sendOnChannel({ type: "typing", active });
+  }
+
+  /** Tells the other person we're leaving, before the server's "lobby" event reaches them. */
+  sendBye() {
+    this.sendOnChannel({ type: "bye" });
+  }
+
+  get chatOpen() {
+    return this.chat.readyState === "open";
   }
 
   /**
@@ -167,8 +205,23 @@ export class PeerSession {
     this.pc.onicecandidate = null;
     this.pc.onnegotiationneeded = null;
     this.pc.onconnectionstatechange = null;
+    this.chat.onopen = null;
+    this.chat.onclose = null;
+    this.chat.onmessage = null;
+    this.chat.close();
     // Closing the connection stops the senders; the local camera stays on for the next match.
     this.pc.close();
+  }
+
+  private sendOnChannel(message: ChatWireMessage): boolean {
+    if (this.closed || this.chat.readyState !== "open") return false;
+    try {
+      this.chat.send(JSON.stringify(message));
+      return true;
+    } catch (err) {
+      console.warn("[peer] chat send failed", err);
+      return false;
+    }
   }
 
   private send(message: Omit<SignalMessage, "roomId">) {

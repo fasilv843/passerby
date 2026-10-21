@@ -3,6 +3,7 @@ import { UserManager } from "./managers/userManager";
 import dotenv from 'dotenv'
 import { createSocketAdapter } from "./configs/socketAdapter";
 import { envConfig } from "./configs/environments";
+import { parsePrefs } from "./matching/prefs";
 
 dotenv.config()
 
@@ -18,6 +19,12 @@ async function start() {
   io.adapter(await createSocketAdapter());
 
   const userManager = new UserManager(io);
+
+  // Matching preferences come with the connection: { mode, language, country }.
+  io.use((socket, next) => {
+    socket.data.prefs = parsePrefs(socket.handshake.auth?.prefs);
+    next();
+  });
 
   io.on("connection", (socket) => {
     console.log("user connected", socket.id);

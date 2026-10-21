@@ -1,5 +1,6 @@
 import { io, Socket } from "socket.io-client";
 import { serverUrl } from "../environment";
+import type { MatchPrefs } from "../types/signaling";
 
 class SocketService {
   private static instance: SocketService;
@@ -14,9 +15,10 @@ class SocketService {
     return SocketService.instance;
   }
 
-  connect() {
+  /** Matching preferences travel with the handshake; reconnect to change them. */
+  connect(prefs: MatchPrefs) {
     if (!this.socket) {
-      this.socket = io(serverUrl, { transports: ["websocket"] });
+      this.socket = io(serverUrl, { transports: ["websocket"], auth: { prefs } });
       console.log("Socket connected:", serverUrl);
     }
     return this.socket;
