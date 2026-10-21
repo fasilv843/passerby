@@ -1,93 +1,87 @@
-import { readFileSync } from "fs";
-import { join } from "path";
-import { Server } from "socket.io";
-import { redis } from "../configs/redisClient";
-import { RoomManager } from "../managers/roomManager";
-import { MatchPrefs, searchStages } from "./prefs";
-import { envConfig } from "../configs/environments";
+import type Redis from "ioredis";
+import { createLogger } from "../logger";
+import type { RoomService } from "../rooms/roomService";
+import type { AppServer } from "../socket/types";
+import { runMatchScript } from "./matchScript";
+import type { MatchAction } from "./matchScript";
+import { searchStages } from "./prefs";
+import type { MatchPrefs } from "./prefs";
 
-/** Give up after this many stale (disconnected) partners in a row and just wait. */
+const log = createLogger("matching");
+
+/** Give up after this many disconnected partners in a row and just wait. */
 const MAX_STALE_PARTNERS = 10;
 
-type ScriptResult = ["matched", string] | ["waiting"] | ["gone"] | ["left"];
-
-declare module "ioredis" {
-  interface RedisCommander<Context> {
-    matchOrWait(numKeys: number, ...args: string[]): Promise<ScriptResult>;
-  }
-}
-
-redis.defineCommand("matchOrWait", {
-  lua: readFileSync(join(__dirname, "matchOrWait.lua"), "utf8"),
-});
-
+/**
+ * Pairs users, widening each user's search over time:
+ * same language and country → same language → anyone.
+ */
 export class Matchmaker {
   /** Widening timers for users connected to this server instance. */
-  private timers = new Map<string, NodeJS.Timeout>();
+  private readonly timers = new Map<string, NodeJS.Timeout>();
 
-  constructor(private io: Server, private roomManager: RoomManager) {}
+  constructor(
+    private readonly io: AppServer,
+    private readonly redis: Redis,
+    private readonly rooms: RoomService,
+    private readonly widenAfterMs: number
+  ) {}
 
   /** Start (or restart) a search from the most specific stage. */
-  async find(userId: string, prefs: MatchPrefs) {
+  async find(userId: string, prefs: MatchPrefs): Promise<void> {
     await this.search(userId, prefs, 0, "join");
   }
 
   /** Remove the user from every queue. */
-  async leave(userId: string) {
+  async leave(userId: string): Promise<void> {
     this.clearTimer(userId);
-    await redis.matchOrWait(0, userId, "leave");
+    await runMatchScript(this.redis, [], userId, "leave");
   }
 
-  private async search(userId: string, prefs: MatchPrefs, stageIndex: number, action: "join" | "widen") {
+  private async search(userId: string, prefs: MatchPrefs, stageIndex: number, action: MatchAction) {
     this.clearTimer(userId);
     const stages = searchStages(prefs);
     const stage = stages[Math.min(stageIndex, stages.length - 1)];
 
     for (let attempt = 0; attempt < MAX_STALE_PARTNERS; attempt++) {
-      const result = await redis.matchOrWait(stage.queues.length, ...stage.queues, userId, action);
+      const result = await runMatchScript(this.redis, stage.queues, userId, action);
 
-      if (result[0] === "gone") return; // matched by someone else in the meantime
+      if (result.status === "gone") return; // someone else matched this user meanwhile
+      if (result.status !== "matched") break; // now waiting
 
-      if (result[0] === "matched") {
-        const partnerId = result[1];
-        if (await this.isConnected(partnerId)) {
-          // The partner has been waiting longer, so they become user1 (impolite peer).
-          await this.roomManager.createRoom(partnerId, userId);
-          return;
-        }
-        // Partner disconnected without being cleaned up: try the next one.
-        // The script already removed both of us from all queues, so "join" again.
-        action = "join";
-        continue;
+      if (await this.isConnected(result.partnerId)) {
+        // The partner has waited longer, so they become user1 (the impolite peer).
+        await this.rooms.open(result.partnerId, userId);
+        return;
       }
-
-      break; // waiting
+      // The partner disconnected without being cleaned up. The script already took
+      // both users out of every queue, so search again from scratch.
+      log.warn(`skipping disconnected partner ${result.partnerId}`);
+      action = "join";
     }
 
     this.io.to(userId).emit("queue-status", { scope: stage.scope });
 
-    if (stageIndex < stages.length - 1) {
-      this.timers.set(
-        userId,
-        setTimeout(() => {
-          this.timers.delete(userId);
-          this.search(userId, prefs, stageIndex + 1, "widen").catch((err) =>
-            console.error("widen failed", err)
-          );
-        }, envConfig.matchWidenMs)
-      );
-    }
+    const hasWiderStage = stageIndex < stages.length - 1;
+    if (hasWiderStage) this.scheduleWiden(userId, prefs, stageIndex + 1);
   }
 
+  private scheduleWiden(userId: string, prefs: MatchPrefs, nextStage: number) {
+    const timer = setTimeout(() => {
+      this.timers.delete(userId);
+      this.search(userId, prefs, nextStage, "widen").catch((err) => log.error("widening failed", err));
+    }, this.widenAfterMs);
+    this.timers.set(userId, timer);
+  }
+
+  /** Asks every server instance (through the Redis adapter) whether the user is still connected. */
   private async isConnected(userId: string) {
-    // fetchSockets() asks every server instance through the Redis adapter.
     const sockets = await this.io.in(userId).fetchSockets();
     return sockets.length > 0;
   }
 
   private clearTimer(userId: string) {
-    const timer = this.timers.get(userId);
-    if (timer) clearTimeout(timer);
+    clearTimeout(this.timers.get(userId));
     this.timers.delete(userId);
   }
 }

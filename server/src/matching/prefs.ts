@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { redisKeys } from "../redis/keys";
 
 /** "*" means "anyone". */
 export const ANY = "*";
@@ -22,9 +23,6 @@ export interface SearchStage {
   queues: string[];
 }
 
-const queueKey = (mode: string, language: string, country: string) =>
-  `q:${mode}:${language}:${country}`;
-
 /**
  * The stages a search widens through:
  *   exact    - same language and same country
@@ -38,9 +36,9 @@ const queueKey = (mode: string, language: string, country: string) =>
  */
 export function searchStages(prefs: MatchPrefs): SearchStage[] {
   const levels: { scope: SearchScope; queue: string }[] = [
-    { scope: "exact", queue: queueKey(prefs.mode, prefs.language, prefs.country) },
-    { scope: "language", queue: queueKey(prefs.mode, prefs.language, ANY) },
-    { scope: "anyone", queue: queueKey(prefs.mode, ANY, ANY) },
+    { scope: "exact", queue: redisKeys.queue(prefs.mode, prefs.language, prefs.country) },
+    { scope: "language", queue: redisKeys.queue(prefs.mode, prefs.language, ANY) },
+    { scope: "anyone", queue: redisKeys.queue(prefs.mode, ANY, ANY) },
   ];
 
   const stages: SearchStage[] = [];
@@ -57,6 +55,7 @@ export function searchStages(prefs: MatchPrefs): SearchStage[] {
   return stages;
 }
 
+/** Reads preferences from the handshake. Invalid or missing values fall back to "anyone". */
 export function parsePrefs(raw: unknown): MatchPrefs {
   const parsed = matchPrefsSchema.safeParse(raw ?? {});
   return parsed.success ? parsed.data : matchPrefsSchema.parse({});
