@@ -34,3 +34,24 @@ export function sortCodecs<T extends { mimeType: string }>(codecs: T[], order: s
     .sort((a, b) => a.rank - b.rank || a.position - b.position)
     .map(({ codec }) => codec);
 }
+
+/**
+ * Applies our receive-codec order to every video transceiver.
+ * The other side encodes with the first codec in our description that it supports.
+ */
+export function applyVideoCodecPreferences(pc: RTCPeerConnection, preferred: string | null) {
+  if (typeof RTCRtpReceiver.getCapabilities !== "function") return;
+  const capabilities = RTCRtpReceiver.getCapabilities("video");
+  if (!capabilities) return;
+  const codecs = sortCodecs(capabilities.codecs, videoCodecOrder(preferred));
+
+  for (const transceiver of pc.getTransceivers()) {
+    if (transceiver.receiver.track.kind !== "video") continue;
+    if (typeof transceiver.setCodecPreferences !== "function") return; // older browsers
+    try {
+      transceiver.setCodecPreferences(codecs);
+    } catch (err) {
+      console.warn("[codecs] setCodecPreferences failed", err);
+    }
+  }
+}
