@@ -1,47 +1,27 @@
-import { Server } from "socket.io";
-import { UserManager } from "./managers/userManager";
-import dotenv from 'dotenv'
-import { createSocketAdapter } from "./configs/socketAdapter";
-import { envConfig } from "./configs/environments";
+import { createApp } from "./app";
+import { env } from "./config/env";
+import { redis } from "./config/redis";
+import { createLogger } from "./logger";
 
-dotenv.config()
+const log = createLogger("server");
 
-const io = new Server(Number(envConfig.port), {
-    cors: {
-        origin: envConfig.clientUrl
-    }
-});
+async function main() {
+  const app = await createApp();
+  app.io.listen(env.port);
+  log.info(`listening on port ${env.port}`);
 
-
-async function start() {
-
-  io.adapter(await createSocketAdapter());
-
-  const userManager = new UserManager(io);
-
-  io.on("connection", (socket) => {
-    console.log("user connected", socket.id);
-    userManager.addUser(socket);
-
-    socket.on("disconnect", () => {
-      console.log("user disconnected", socket.id);
-      userManager.removeUser(socket.id);
-    });
-  });
-
-  console.log(`Server running on port ${envConfig.port}`);
+  const shutdown = async (signal: string) => {
+    log.info(`${signal} received, shutting down`);
+    await app.close();
+    // quit() waits for commands already sent, e.g. from disconnect handlers.
+    await redis.quit();
+    process.exit(0);
+  };
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
 }
 
-start();
-
-// const userManager = new UserManager();
-
-// io.on('connection', (socket) => {
-//     console.log('a user connected', socket.id);
-//     userManager.addUser(socket);
-//     socket.on('disconnect', () => {
-//         console.log('a user disconnected', socket.id);
-//         userManager.removeUser(socket.id);
-//     });
-// });
-
+main().catch((err) => {
+  log.error("failed to start", err);
+  process.exit(1);
+});

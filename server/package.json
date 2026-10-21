@@ -1,26 +1,30 @@
 {
   "name": "server",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Passerby signaling and matchmaking server (Socket.IO + Redis)",
+  "main": "dist/index.js",
   "scripts": {
-    "build": "npx tsc -b",
+    "build": "tsc -b && node -e \"require('fs').cpSync('src/matching/matchOrWait.lua','dist/matching/matchOrWait.lua')\"",
     "start": "node dist/index.js",
-    "dev": "nodemon src/index.ts"
+    "dev": "nodemon src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@types/redis": "^4.0.10",
     "nodemon": "^3.1.10",
+    "socket.io-client": "^4.8.1",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "@socket.io/redis-adapter": "^8.3.0",
     "dotenv": "^17.2.2",
     "ioredis": "^5.7.0",
+    "mediasoup": "^3.30.1",
     "socket.io": "^4.8.1",
     "zod": "^4.1.9"
   }
