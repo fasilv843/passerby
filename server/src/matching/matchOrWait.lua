@@ -9,24 +9,26 @@
 --           "widen" - same as join, but only if the user is still waiting
 --                     (someone may have matched them a moment ago)
 --           "leave" - stop waiting
+-- ARGV[3] prefix for the per-user "waiting" set (redisKeys.waitingPrefix)
 --
--- Each waiting user has a set "waiting:<id>" listing every queue they sit in,
+-- Each waiting user has a set "<prefix><id>" listing every queue they sit in,
 -- so they can be removed from all of them in one step when matched or leaving.
 --
 -- Returns {"matched", otherId} | {"waiting"} | {"gone"} | {"left"}
 
 local me = ARGV[1]
 local action = ARGV[2]
+local waitingPrefix = ARGV[3]
 
 local function leave(id)
-  local set = 'waiting:' .. id
+  local set = waitingPrefix .. id
   for _, queue in ipairs(redis.call('SMEMBERS', set)) do
     redis.call('LREM', queue, 0, id)
   end
   redis.call('DEL', set)
 end
 
-if action == 'widen' and redis.call('EXISTS', 'waiting:' .. me) == 0 then
+if action == 'widen' and redis.call('EXISTS', waitingPrefix .. me) == 0 then
   return {'gone'}
 end
 
@@ -45,6 +47,6 @@ end
 
 for _, queue in ipairs(KEYS) do
   redis.call('RPUSH', queue, me)
-  redis.call('SADD', 'waiting:' .. me, queue)
+  redis.call('SADD', waitingPrefix .. me, queue)
 end
 return {'waiting'}
