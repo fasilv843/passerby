@@ -1,4 +1,11 @@
-import type { ConnectionPath, SignalMessage } from "../types/signaling";
+import type { SignalMessage } from "../types/signaling";
+import { sortCodecs, videoCodecOrder } from "../media/codecs";
+import { tuneOpus } from "../media/opus";
+import { createStatsSummarizer } from "../media/stats";
+import type { CallStats } from "../media/stats";
+import { initialAdaptationState, nextAdaptationState, QUALITY_LEVELS } from "../media/adaptation";
+import type { AdaptationState } from "../media/adaptation";
+import type { MediaSettings } from "../media/settings";
 import { MAX_CHAT_LENGTH, newId, parseChatWireMessage } from "../types/chat";
 import type { ChatWireMessage } from "../types/chat";
 
@@ -7,10 +14,12 @@ interface PeerSessionOptions {
   polite: boolean;
   iceServers: RTCIceServer[];
   localStream: MediaStream | null;
+  settings: MediaSettings;
   sendSignal: (message: SignalMessage) => void;
   onRemoteStream: (stream: MediaStream) => void;
   onConnectionStateChange: (state: RTCPeerConnectionState) => void;
-  onPathChange: (path: ConnectionPath | null) => void;
+  /** Called every few seconds while connected; null when the connection fails. */
+  onStats: (stats: CallStats | null) => void;
   onChatMessage: (message: ChatWireMessage) => void;
   onChatOpenChange: (open: boolean) => void;
 }
@@ -48,6 +57,12 @@ export class PeerSession {
   private readonly fallbackRemoteStream = new MediaStream();
   private readonly chat: RTCDataChannel;
 
+  private readonly summarizeStats = createStatsSummarizer();
+  private videoSender: RTCRtpSender | null = null;
+  private adaptation: AdaptationState = initialAdaptationState;
+  /** Quality level currently set on the video sender, or -1 before the first apply. */
+  private appliedLevel = -1;
+
   constructor(opts: PeerSessionOptions) {
     this.opts = opts;
     this.roomId = opts.roomId;
@@ -63,7 +78,11 @@ export class PeerSession {
     // (Calling addTransceiver() first and then addTrack() created a second,
     // unused audio and video section in every SDP.)
     const stream = opts.localStream;
-    stream?.getTracks().forEach((track) => this.pc.addTrack(track, stream));
+    stream?.getTracks().forEach((track) => {
+      const sender = this.pc.addTrack(track, stream);
+      if (track.kind === "video") this.videoSender = sender;
+    });
+    this.applyVideoCodecPreferences();
 
     // Text chat runs peer to peer over SCTP inside the same DTLS connection.
     // `negotiated: true` with a fixed id means both peers create the channel
@@ -99,8 +118,12 @@ export class PeerSession {
         }
 
         this.isSettingRemoteAnswerPending = description.type === "answer";
+        // Opus FEC/DTX: see media/opus.ts for why the *remote* description is edited.
+        const remote = description.sdp
+          ? { ...description, sdp: tuneOpus(description.sdp, { fec: this.opts.settings.opusFec, dtx: this.opts.settings.opusDtx }) }
+          : description;
         // For the polite peer, this implicitly rolls back its own pending offer.
-        await this.pc.setRemoteDescription(description);
+        await this.pc.setRemoteDescription(remote);
         this.isSettingRemoteAnswerPending = false;
         await this.flushPendingCandidates();
 
@@ -150,46 +173,6 @@ export class PeerSession {
     if (this.closed) return;
     console.info("[peer] restarting ICE");
     this.pc.restartIce();
-  }
-
-  /** Reads the selected candidate pair and reports whether media is direct or relayed. */
-  async getConnectionPath(): Promise<ConnectionPath | null> {
-    if (this.closed) return null;
-    const stats = await this.pc.getStats();
-
-    let pair: RTCIceCandidatePairStats | undefined;
-    stats.forEach((report) => {
-      // Chrome and Safari: the transport points at the selected pair.
-      if (report.type === "transport" && report.selectedCandidatePairId) {
-        pair = stats.get(report.selectedCandidatePairId);
-      }
-    });
-    if (!pair) {
-      stats.forEach((report) => {
-        // Firefox marks the pair itself as selected.
-        if (report.type === "candidate-pair" && (report.selected || report.nominated) && report.state === "succeeded") {
-          pair = report;
-        }
-      });
-    }
-    if (!pair) return null;
-
-    const local = stats.get(pair.localCandidateId);
-    const remote = stats.get(pair.remoteCandidateId);
-    if (!local || !remote) return null;
-
-    const isRelay = local.candidateType === "relay" || remote.candidateType === "relay";
-    return {
-      kind: isRelay ? "relay" : "direct",
-      localType: local.candidateType,
-      remoteType: remote.candidateType,
-      protocol: local.protocol,
-      relayProtocol: local.relayProtocol,
-      rttMs:
-        typeof pair.currentRoundTripTime === "number"
-          ? Math.round(pair.currentRoundTripTime * 1000)
-          : undefined,
-    };
   }
 
   close() {
@@ -268,7 +251,7 @@ export class PeerSession {
       }, DISCONNECT_GRACE_MS);
     } else if (state === "failed") {
       this.stopStatsPolling();
-      this.opts.onPathChange(null);
+      this.opts.onStats(null);
       this.restartIce();
     }
   };
@@ -299,14 +282,75 @@ export class PeerSession {
   private startStatsPolling() {
     if (this.statsTimer) return;
     const poll = async () => {
+      if (this.closed) return;
       try {
-        this.opts.onPathChange(await this.getConnectionPath());
+        const stats = this.summarizeStats(await this.pc.getStats());
+        if (this.closed) return;
+        await this.adaptVideoQuality(stats);
+        const level = QUALITY_LEVELS[this.adaptation.level];
+        this.opts.onStats(
+          this.videoSender
+            ? { ...stats, quality: { label: level.label, level: this.adaptation.level, adaptive: this.opts.settings.adaptiveQuality } }
+            : stats
+        );
       } catch (err) {
         console.warn("[peer] getStats failed", err);
       }
     };
     poll();
     this.statsTimer = setInterval(poll, STATS_INTERVAL_MS);
+  }
+
+  /**
+   * Orders the codecs we're willing to receive. The other side encodes with
+   * the first one in our description that it supports.
+   */
+  private applyVideoCodecPreferences() {
+    const capabilities = typeof RTCRtpReceiver.getCapabilities === "function"
+      ? RTCRtpReceiver.getCapabilities("video")
+      : null;
+    if (!capabilities) return;
+    const order = videoCodecOrder(this.opts.settings.preferredVideoCodec);
+    const codecs = sortCodecs(capabilities.codecs, order);
+
+    for (const transceiver of this.pc.getTransceivers()) {
+      if (transceiver.receiver.track.kind !== "video") continue;
+      if (typeof transceiver.setCodecPreferences !== "function") return; // older browsers
+      try {
+        transceiver.setCodecPreferences(codecs);
+      } catch (err) {
+        console.warn("[peer] setCodecPreferences failed", err);
+      }
+    }
+  }
+
+  /**
+   * Steps video bitrate and resolution down on sustained loss or latency,
+   * and back up when the network recovers. See media/adaptation.ts.
+   */
+  private async adaptVideoQuality(stats: CallStats) {
+    if (!this.videoSender) return;
+    if (this.opts.settings.adaptiveQuality) {
+      this.adaptation = nextAdaptationState(this.adaptation, {
+        lossPct: stats.video.send?.remoteLossPct,
+        rttMs: stats.rttMs,
+        availableKbps: stats.availableOutgoingKbps,
+      });
+    }
+    if (this.adaptation.level === this.appliedLevel) return;
+
+    const params = this.videoSender.getParameters();
+    if (!params.encodings?.length) return; // not negotiated yet; try on the next poll
+    const level = QUALITY_LEVELS[this.adaptation.level];
+    params.encodings[0].maxBitrate = level.maxBitrateKbps * 1000;
+    params.encodings[0].scaleResolutionDownBy = level.scaleResolutionDownBy;
+    try {
+      await this.videoSender.setParameters(params);
+      if (this.appliedLevel !== -1) console.info(`[peer] video quality → ${level.label}`);
+      this.appliedLevel = this.adaptation.level;
+    } catch (err) {
+      console.warn("[peer] setParameters failed", err);
+    }
   }
 
   private stopStatsPolling() {
