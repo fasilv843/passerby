@@ -8,7 +8,10 @@ import type { GroupSignaling } from "./groupSignaling";
 // Node has no MediaStream; this is all the controller needs from one.
 beforeAll(() => {
   globalThis.MediaStream = class {
-    constructor(private readonly tracks: MediaStreamTrack[] = []) {}
+    private readonly tracks: MediaStreamTrack[];
+    constructor(tracks: MediaStreamTrack[] = []) {
+      this.tracks = tracks;
+    }
     getTracks() { return this.tracks; }
     getAudioTracks() { return this.tracks.filter((t) => t.kind === "audio"); }
     getVideoTracks() { return this.tracks.filter((t) => t.kind === "video"); }
